@@ -3,15 +3,17 @@
 #include <EEPROM.h>
 #include <Timer.h>
 
-#define DRIVER_ENABLE_PIN 2             // on the EP400v2 that's the control pin
-#define RXPIN 10                        // ModBus receiver pin
-#define TXPIN 11                        // ModBuse transmission pin
-#define LED_RED 13                      // EP400v2's onboard red led
-#define LED_GREEN 9                     // EP400v2's onboard green led
-#define MODBUS_BUTTON 5                 // EP400v2's ModBus function button pin
-#define SENSITIVITY_BUTTON 6            // EP400v2's Sensitivity button pin
-#define PERIPHEAL_POWER 8               // EP400v2's peripheal power
-const uint8_t inputs[3] = { 2, 3, 4 };  // defining inputs pins !!!CHIEDERE SE SU QUESTA SCHEDA SONO CAMBIATI!!!
+#define DRIVER_ENABLE_PIN 2                // on the EP400v2 that's the control pin
+#define RXPIN 10                           // ModBus receiver pin
+#define TXPIN 11                           // ModBuse transmission pin
+#define LED_RED 13                         // EP400v2's onboard red led
+#define LED_GREEN 9                        // EP400v2's onboard green led
+#define MODBUS_BUTTON 5                    // EP400v2's ModBus function button pin
+#define SENSITIVITY_BUTTON 4               // EP400v2's Sensitivity button pin
+#define PERIPHEAL_POWER 8                  // EP400v2's peripheal power
+#define MODBUS_SLAVE_ID_EEPROM_LOCATION 1  // ModBus Slave ID EEPROM memory location
+#define SENSITIVITY_EEPROM_LOCATION 2      // Sensitivity parameter EEPROM location
+const uint8_t inputs[3] = { 2, 3, 4 };     // defining inputs pins !!!CHIEDERE SE SU QUESTA SCHEDA SONO CAMBIATI!!!
 
 SoftwareSerial mySerial(RXPIN, TXPIN);               // defining SoftwareSerial communication
 ModbusRTUSlave modbus(mySerial, DRIVER_ENABLE_PIN);  // defining modbus rtu slave
@@ -25,6 +27,7 @@ uint16_t commands[3];
 
 uint8_t slaveID;              // slave ID for ModBus, the default is 1
 uint8_t previousSlaveID;      // slave ID for ModBus, cache
+uint8_t sensitivityValue;     // sensitiviry value
 bool modbusEditMode = false;  // edit mode control variable
 
 /*********************************************************************************************************/
@@ -34,7 +37,8 @@ void (*reboot)(void) = 0;  // reset function, at address 0, calling it will make
 void firstBoot() {  // first boot function, to reset memory location in which is stored the slave ID
   if (EEPROM[64] != 64) {
     EEPROM.update(64, 64);
-    EEPROM.update(1, 1);
+    EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, 1);
+    EEPROM.update(SENSITIVITY_EEPROM_LOCATION, 1);
   } else {
     EEPROM.update(63, 1);
   }
@@ -71,8 +75,9 @@ void shortBlinky() {  // short led blink function
 void setup() {
   firstBoot();
 
-  slaveID = EEPROM.read(1);
-  previousSlaveID = EEPROM.read(1);
+  slaveID = EEPROM.read(MODBUS_SLAVE_ID_EEPROM_LOCATION);
+  previousSlaveID = EEPROM.read(MODBUS_SLAVE_ID_EEPROM_LOCATION);
+  sensitivityValue = EEPROM.read(SENSITIVITY_EEPROM_LOCATION);
 
   pinMode(inputs[0], INPUT_PULLUP);
   pinMode(inputs[1], INPUT_PULLUP);
@@ -89,6 +94,7 @@ void setup() {
 
   timer.start();                     // starting timer..
   digitalWrite(PERIPHEAL_POWER, 1);  // peripheal power
+  //Serial.begin(9600);                //DEBUG
 }
 
 void loop() {
@@ -107,14 +113,14 @@ void loop() {
     reboot();
   }
 
-  if (commands[0] == 0x0001 && commands[1] == 0x0001 && commands[2] == 0x0001) {  // Slave ID reset command
+  if (commands[0] == 0x0001 && commands[1] == 0x0001 && commands[2] == 0x0001) {  // 010101 Slave ID reset command
     EEPROM.update(1, 1);
     blinky();
     delay(1000);
     reboot();
   }
 
-  if (commands[0] == 0x000A && commands[1] == 0x000A && commands[2] == 0x000A) {
+  if (commands[0] == 0x000A && commands[1] == 0x000A && commands[2] == 0x000A) {  // 0A0A0A red and green led blink test
     blinky();
     delay(1000);
     reboot();
@@ -124,7 +130,7 @@ void loop() {
      in edit mode, use the BUTTON to increment slave ID by 1 (from 1 to 99)
      wait for 10 seconds to reset the board and apply changes
   */
-  if (!digitalRead(MODBUS_BUTTON) || !digitalRead(SENSITIVITY_BUTTON)) {  // ModBus button timer check
+  if (!digitalRead(MODBUS_BUTTON)) {  // ModBus button timer check
     timer.resume();
   } else {
     timer.pause();
@@ -139,7 +145,7 @@ void loop() {
     }
   }
 
-  if (!digitalRead(MODBUS_BUTTON) && modbusEditMode) {
+  if (!digitalRead(MODBUS_BUTTON) && modbusEditMode) {  // EEPROM update condition
     timerReboot.stop();
     if (slaveID < 100) {
       slaveID++;
@@ -155,5 +161,62 @@ void loop() {
     if (slaveID == previousSlaveID) EEPROM.update(1, 1);
     blinky();
     reboot();
+  }
+
+  /* sensitivity button (1-3):
+    1: red led only
+    2: green led only
+    3: both green and red leds
+*/
+  if (!digitalRead(SENSITIVITY_BUTTON) && !modbusEditMode) {
+    if (sensitivityValue < 4) sensitivityValue++;
+    else sensitivityValue = 1;
+    EEPROM.update(SENSITIVITY_EEPROM_LOCATION, sensitivityValue);
+
+    switch (sensitivityValue) {
+      case 1:
+        digitalWrite(LED_RED, 1);
+        delay(1000);
+        digitalWrite(LED_RED, 0);
+        break;
+      case 2:
+        digitalWrite(LED_GREEN, 1);
+        delay(1000);
+        digitalWrite(LED_GREEN, 0);
+        break;
+      case 3:
+        digitalWrite(LED_RED, 1);
+        digitalWrite(LED_GREEN, 1);
+        delay(1000);
+        digitalWrite(LED_RED, 0);
+        digitalWrite(LED_GREEN, 0);
+        break;
+    }
+  }
+
+/* Slave ID monitor on leds (press both buttons):
+   Red leds are the units count, green leds are the tens
+*/
+  if (!digitalRead(SENSITIVITY_BUTTON) && !digitalRead(MODBUS_BUTTON) && !modbusEditMode) {
+    for (int i = String(slaveID).length(); i > 0; i--) {
+      switch (i) {
+        case 2:
+          for (int j = 0; j < String(slaveID).charAt(i - 1) - '0'; j++) {
+            digitalWrite(LED_RED, 1);
+            delay(250);
+            digitalWrite(LED_RED, 0);
+            delay(250);
+          }
+          break;
+        case 1:
+          for (int j = 0; j < String(slaveID).charAt(i - 1) - '0'; j++) {
+            digitalWrite(LED_GREEN, 1);
+            delay(250);
+            digitalWrite(LED_GREEN, 0);
+            delay(250);
+          }
+          break;
+      }
+    }
   }
 }
