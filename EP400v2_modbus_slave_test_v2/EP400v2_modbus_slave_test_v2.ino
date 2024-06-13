@@ -31,6 +31,9 @@ uint8_t previousSlaveID;      // slave ID for ModBus, cache
 uint8_t sensitivityValue;     // sensitiviry value
 bool modbusEditMode = false;  // edit mode control variable
 bool modbusButtonLastStatus;  // control variable for ModBus button release
+uint8_t units_ = 0;           // unit digit variable for new ModBus slave ID
+uint8_t tens_ = 0;            // tens digit variable for new ModBus slave ID
+bool editUnits = true;        // toggle variable to edit new ModBus slave ID via buttons
 
 /*********************************************************************************************************/
 
@@ -204,29 +207,48 @@ void loop() {
   if (timer.read() % 5000 == 0 && timer.read() >= 5000) {  // long press ModBus button for 5 seconds to enter edit mode
     if (!modbusEditMode && !digitalRead(MODBUS_BUTTON)) {
       timerReboot.start();
-      slaveID--;  // this one because when released ModBus button, slave ID increments by 1
+      blinky();
       modbusEditMode = true;
     }
     delay(100);
   }
 
-  if (!digitalRead(MODBUS_BUTTON) && modbusEditMode) {  // EEPROM update condition
+  if (!digitalRead(MODBUS_BUTTON) && modbusEditMode) {  // EEPROM update
     timerReboot.stop();
-    if (slaveID < 231) {
-      slaveID++;
-      EEPROM.update(1, slaveID);  // updating the EEPROM...
-    } else slaveID = 1;
-    shortBlinky();
+    if (editUnits) {
+      if (units_ < 10) {
+        units_++;
+        digitalWrite(LED_RED, 1);
+        delay(100);
+        digitalWrite(LED_RED, 0);
+        delay(100);
+      } else units_ = 0;
+    } else {
+      if (tens_ <= 22) {
+        tens_++;
+        digitalWrite(LED_GREEN, 1);
+        delay(100);
+        digitalWrite(LED_GREEN, 0);
+        delay(100);
+      } else tens_ = 0;
+    }
+    slaveID = (tens_ * 10) + units_;
     timerReboot.start();
     delay(100);
+  }
+
+  if (!digitalRead(SENSITIVITY_BUTTON) && modbusEditMode) {
+    shortBlinky();
+    if (editUnits) editUnits = false;
+    else editUnits = true;
   }
 
   /* if Slave ID edit mode is idle for 10 seconds, board reboots
   if Slave ID is unchanged, value will be reseto to 1 */
   if (modbusEditMode && timerReboot.read() == 10000) {
-    if (slaveID == previousSlaveID) {
+    if (slaveID == 0) {
       EEPROM.update(1, 1);
-    }
+    } else EEPROM.update(1, slaveID);  // updating the EEPROM...
     blinky();
     reboot();
   }
