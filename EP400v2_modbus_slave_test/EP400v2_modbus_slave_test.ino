@@ -2,6 +2,7 @@
 #include <SoftwareSerial.h>
 #include <EEPROM.h>
 #include <Timer.h>
+#include <avr/wdt.h>
 
 #define DRIVER_ENABLE_PIN 2                // on the EP400v2 that's the control pin
 #define RXPIN 10                           // ModBus receiver pin
@@ -29,6 +30,7 @@ uint8_t slaveID;              // slave ID for ModBus, the default is 1
 uint8_t previousSlaveID;      // slave ID for ModBus, cache
 uint8_t sensitivityValue;     // sensitiviry value
 bool modbusEditMode = false;  // edit mode control variable
+bool modbusButtonLastStatus;  // control variable for ModBus button release
 
 /*********************************************************************************************************/
 
@@ -70,6 +72,21 @@ void shortBlinky() {  // short led blink function
   }
 }
 
+/* void analog_average(int ch, int AN_ch) {  // Lettura canali analogici
+  Analog_Value[ch] = analogRead(AN_ch);
+  delayMicroseconds(1000);
+  Analog_Value[ch] = analogRead(AN_ch);
+  Analog_Value[ch] = 0;
+  delayMicroseconds(1000);
+
+  for (int i = 0; i < 10; i++) {
+    Analog_Value[ch] += analogRead(AN_ch);
+    delayMicroseconds(500);
+  }
+  Analog_Value[ch] /= 10;
+  // wdt_reset();
+} */
+
 /*********************************************************************************************************/
 
 void setup() {
@@ -92,9 +109,10 @@ void setup() {
   modbus.configureHoldingRegisters(commands, 3);      // first two numbers are used for commands, third is the parameter
   modbus.begin(slaveID, 9600);
 
-  timer.start();                     // starting timer..
+  timer.start();  // starting timer..
+  firstBoot();
   digitalWrite(PERIPHEAL_POWER, 1);  // peripheal power
-  //Serial.begin(9600);                //DEBUG
+  Serial.begin(9600);                //DEBUG
 }
 
 void loop() {
@@ -126,23 +144,46 @@ void loop() {
     reboot();
   }
 
-  /* Edit Mode BUTTON routine: if the BUTTON is pressed for at least 5 seconds, board enters slave ID edit mode
-     in edit mode, use the BUTTON to increment slave ID by 1 (from 1 to 99)
-     wait for 10 seconds to reset the board and apply changes
-  */
-  if (!digitalRead(MODBUS_BUTTON)) {  // ModBus button timer check
+  if (!digitalRead(MODBUS_BUTTON)) {  // ModBus button: if released shows on leds ModBus Slave ID, if 5-seconds long press enters Slave ID edit mode
+    modbusButtonLastStatus = true;
     timer.resume();
   } else {
+    if (modbusButtonLastStatus && !modbusEditMode) {
+      /* Slave ID monitor on leds (release ModBus button):
+      Red leds are the units count, green leds are the tens */
+      for (int i = 1; i <= String(slaveID).length(); i++) {
+        switch (i) {
+          case 2:
+            for (int j = 0; j < String(slaveID).charAt(i - 1) - '0'; j++) {
+              digitalWrite(LED_RED, 1);
+              delay(250);
+              digitalWrite(LED_RED, 0);
+              delay(250);
+            }
+            break;
+          case 1:
+            for (int j = 0; j < String(slaveID).charAt(i - 1) - '0'; j++) {
+              digitalWrite(LED_GREEN, 1);
+              delay(250);
+              digitalWrite(LED_GREEN, 0);
+              delay(250);
+            }
+            break;
+        }
+      }
+      delay(100);
+    }
     timer.pause();
+    modbusButtonLastStatus = false;
   }
 
   if (timer.read() % 5000 == 0 && timer.read() >= 5000) {  // long press ModBus button for 5 seconds to enter edit mode
-    delay(100);
     if (!modbusEditMode && !digitalRead(MODBUS_BUTTON)) {
       timerReboot.start();
+      slaveID--;  // this one because when released ModBus button, slave ID increments by 1
       modbusEditMode = true;
-      blinky();
     }
+    delay(100);
   }
 
   if (!digitalRead(MODBUS_BUTTON) && modbusEditMode) {  // EEPROM update condition
@@ -153,12 +194,16 @@ void loop() {
     } else EEPROM.update(1, 1);
     shortBlinky();
     timerReboot.start();
+    delay(100);
   }
 
   /* if Slave ID edit mode is idle for 10 seconds, board reboots
   if Slave ID is unchanged, value will be reseto to 1 */
   if (modbusEditMode && timerReboot.read() == 10000) {
-    if (slaveID == previousSlaveID) EEPROM.update(1, 1);
+    if (slaveID == previousSlaveID) {
+      Serial.println("SAME!");
+      EEPROM.update(1, 1);
+    }
     blinky();
     reboot();
   }
@@ -191,32 +236,6 @@ void loop() {
         digitalWrite(LED_RED, 0);
         digitalWrite(LED_GREEN, 0);
         break;
-    }
-  }
-
-/* Slave ID monitor on leds (press both buttons):
-   Red leds are the units count, green leds are the tens
-*/
-  if (!digitalRead(SENSITIVITY_BUTTON) && !digitalRead(MODBUS_BUTTON) && !modbusEditMode) {
-    for (int i = String(slaveID).length(); i > 0; i--) {
-      switch (i) {
-        case 2:
-          for (int j = 0; j < String(slaveID).charAt(i - 1) - '0'; j++) {
-            digitalWrite(LED_RED, 1);
-            delay(250);
-            digitalWrite(LED_RED, 0);
-            delay(250);
-          }
-          break;
-        case 1:
-          for (int j = 0; j < String(slaveID).charAt(i - 1) - '0'; j++) {
-            digitalWrite(LED_GREEN, 1);
-            delay(250);
-            digitalWrite(LED_GREEN, 0);
-            delay(250);
-          }
-          break;
-      }
     }
   }
 }
