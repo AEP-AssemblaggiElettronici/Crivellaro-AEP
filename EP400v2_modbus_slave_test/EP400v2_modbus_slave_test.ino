@@ -112,7 +112,7 @@ void setup() {
   timer.start();  // starting timer..
   firstBoot();
   digitalWrite(PERIPHEAL_POWER, 1);  // peripheal power
-  Serial.begin(9600);                //DEBUG
+  //Serial.begin(9600);                //debug
 }
 
 void loop() {
@@ -123,7 +123,7 @@ void loop() {
   modbus.poll();
 
   if (commands[0] == 0x00C0 && commands[1] == 0x0050) {  // C050, is the ModBus master's command to update slave ID
-    if (slaveID < 100) {
+    if (slaveID < 231) {
       EEPROM.update(1, commands[2]);
     } else EEPROM.update(1, 1);
     blinky();
@@ -150,25 +150,49 @@ void loop() {
   } else {
     if (modbusButtonLastStatus && !modbusEditMode) {
       /* Slave ID monitor on leds (release ModBus button):
-      Red leds are the units count, green leds are the tens */
-      for (int i = 1; i <= String(slaveID).length(); i++) {
-        switch (i) {
-          case 2:
-            for (int j = 0; j < String(slaveID).charAt(i - 1) - '0'; j++) {
-              digitalWrite(LED_RED, 1);
-              delay(250);
-              digitalWrite(LED_RED, 0);
-              delay(250);
-            }
-            break;
-          case 1:
-            for (int j = 0; j < String(slaveID).charAt(i - 1) - '0'; j++) {
-              digitalWrite(LED_GREEN, 1);
-              delay(250);
-              digitalWrite(LED_GREEN, 0);
-              delay(250);
-            }
-            break;
+      Red leds are the units count, green leds are the tens, both leds are for the hundreds */
+      uint8_t units = 0;
+      uint8_t tens = 0;
+      uint8_t hundreds = 0;
+      uint8_t ascii = 48;  // ASCII conversion number
+      switch (String(slaveID).length()) {
+        case 1:
+          units = String(slaveID).charAt(0);
+          break;
+        case 2:
+          units = String(slaveID).charAt(1);
+          tens = String(slaveID).charAt(0);
+          break;
+        case 3:
+          units = String(slaveID).charAt(2);
+          tens = String(slaveID).charAt(1);
+          hundreds = String(slaveID).charAt(0);
+          break;
+      }
+      if (hundreds > 0) {
+        for (int i = 0; i < hundreds - ascii; i++) {
+          digitalWrite(LED_RED, 1);
+          digitalWrite(LED_GREEN, 1);
+          delay(250);
+          digitalWrite(LED_RED, 0);
+          digitalWrite(LED_GREEN, 0);
+          delay(250);
+        }
+      }
+      if (tens > 0) {
+        for (int i = 0; i < tens - ascii; i++) {
+          digitalWrite(LED_GREEN, 1);
+          delay(250);
+          digitalWrite(LED_GREEN, 0);
+          delay(250);
+        }
+      }
+      if (units > 0) {
+        for (int i = 0; i < units - ascii; i++) {
+          digitalWrite(LED_RED, 1);
+          delay(250);
+          digitalWrite(LED_RED, 0);
+          delay(250);
         }
       }
       delay(100);
@@ -188,10 +212,10 @@ void loop() {
 
   if (!digitalRead(MODBUS_BUTTON) && modbusEditMode) {  // EEPROM update condition
     timerReboot.stop();
-    if (slaveID < 100) {
+    if (slaveID < 231) {
       slaveID++;
       EEPROM.update(1, slaveID);  // updating the EEPROM...
-    } else EEPROM.update(1, 1);
+    } else slaveID = 1;
     shortBlinky();
     timerReboot.start();
     delay(100);
@@ -201,7 +225,6 @@ void loop() {
   if Slave ID is unchanged, value will be reseto to 1 */
   if (modbusEditMode && timerReboot.read() == 10000) {
     if (slaveID == previousSlaveID) {
-      Serial.println("SAME!");
       EEPROM.update(1, 1);
     }
     blinky();
