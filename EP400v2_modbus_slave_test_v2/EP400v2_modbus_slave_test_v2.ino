@@ -125,7 +125,7 @@ void loop() {
 
   modbus.poll();
 
-  if (commands[0] == 0x00C0 && commands[1] == 0x0050) {  // C050, is the ModBus master's command to update slave ID
+  if (commands[0] == 0x00C0 && commands[1] == 0x0050) {  // C0 - 50 ("coso"), is the ModBus master's command to update slave ID
     if (slaveID < 231) {
       EEPROM.update(1, commands[2]);
     } else EEPROM.update(1, 1);
@@ -136,13 +136,13 @@ void loop() {
 
   if (commands[0] == 0x0001 && commands[1] == 0x0001 && commands[2] == 0x0001) {  // 010101 Slave ID reset command
     EEPROM.update(1, 1);
-    blinky();
+    shortBlinky();
     delay(1000);
     reboot();
   }
 
   if (commands[0] == 0x000A && commands[1] == 0x000A && commands[2] == 0x000A) {  // 0A0A0A red and green led blink test
-    blinky();
+    shortBlinky();
     delay(1000);
     reboot();
   }
@@ -215,7 +215,7 @@ void loop() {
 
   if (!digitalRead(MODBUS_BUTTON) && modbusEditMode) {  // EEPROM update
     timerReboot.stop();
-    if (editUnits) {
+    if (editUnits) {  // press ModBus button to edit units on the slave ID - 0 to 9 and over
       if (units_ < 10) {
         units_++;
         digitalWrite(LED_RED, 1);
@@ -224,7 +224,7 @@ void loop() {
         delay(100);
       } else units_ = 0;
     } else {
-      if (tens_ <= 22) {
+      if (tens_ <= 22) {  // press ModBus button to edit tens on the slave ID - 0 to 22 and over
         tens_++;
         digitalWrite(LED_GREEN, 1);
         delay(100);
@@ -237,7 +237,7 @@ void loop() {
     delay(100);
   }
 
-  if (!digitalRead(SENSITIVITY_BUTTON) && modbusEditMode) {
+  if (!digitalRead(SENSITIVITY_BUTTON) && modbusEditMode) {  // on slave ID edit mode, toggles between tens and unit edit
     shortBlinky();
     if (editUnits) editUnits = false;
     else editUnits = true;
