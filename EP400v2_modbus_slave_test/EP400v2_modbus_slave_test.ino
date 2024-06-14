@@ -14,23 +14,32 @@
 #define PERIPHEAL_POWER 8                  // EP400v2's peripheal power
 #define MODBUS_SLAVE_ID_EEPROM_LOCATION 1  // ModBus Slave ID EEPROM memory location
 #define SENSITIVITY_EEPROM_LOCATION 2      // Sensitivity parameter EEPROM location
-const uint8_t inputs[3] = { 2, 3, 4 };     // defining inputs pins !!!CHIEDERE SE SU QUESTA SCHEDA SONO CAMBIATI!!!
+#define ANALOG_IN1 A0                      // analog inputs for sensors
+#define ANALOG_IN2 A1
+#define ANALOG_IN3 A2
+const uint8_t inputs[3] = { 2, 3, 4 };  // defining inputs pins
 
 SoftwareSerial mySerial(RXPIN, TXPIN);               // defining SoftwareSerial communication
 ModbusRTUSlave modbus(mySerial, DRIVER_ENABLE_PIN);  // defining modbus rtu slave
-Timer timer;                                         // timer for Slave ID edit mode
-Timer timerReboot;                                   // timer for Slave ID edit mode reboot
+Timer modbusTimer;                                   // timer for Slave ID edit mode
+Timer modbusTimerReboot;                             // timer for Slave ID edit mode reboot
+Timer sensorsTimer;                                  // timer for analog sensors
 
 /* defining ModBus inputs, registers.. */
 bool discreteInputs[3];
 bool coils[2];
 uint16_t commands[3];
 
-uint8_t slaveID;              // slave ID for ModBus, the default is 1
-uint8_t previousSlaveID;      // slave ID for ModBus, cache
-uint8_t sensitivityValue;     // sensitiviry value
-bool modbusEditMode = false;  // edit mode control variable
-bool modbusButtonLastStatus;  // control variable for ModBus button release
+uint8_t slaveID;                             // slave ID for ModBus, the default is 1
+int sensitivityValue;                        // sensitivity value
+uint8_t sensitivityValueIndex = 0;           // sensitivity value index
+bool modbusEditMode = false;                 // edit mode control variable
+bool modbusButtonLastStatus;                 // control variable for ModBus button release
+int Analog_Value[3] = { 1024, 1024, 1024 };  // analog values for sensors
+int sensorsInterval = 4000;                  // time interval for sensors (mss)
+int sensitivityConsts[3] = { 350, 500, 650 };
+bool alarm = false;
+bool alarmSupport = false;
 
 /*********************************************************************************************************/
 
@@ -41,8 +50,6 @@ void firstBoot() {  // first boot function, to reset memory location in which is
     EEPROM.update(64, 64);
     EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, 1);
     EEPROM.update(SENSITIVITY_EEPROM_LOCATION, 1);
-  } else {
-    EEPROM.update(63, 1);
   }
 }
 
@@ -72,7 +79,7 @@ void shortBlinky() {  // short led blink function
   }
 }
 
-/* void analog_average(int ch, int AN_ch) {  // Lettura canali analogici
+void analog_average(int ch, int AN_ch) {  // Lettura canali analogici
   Analog_Value[ch] = analogRead(AN_ch);
   delayMicroseconds(1000);
   Analog_Value[ch] = analogRead(AN_ch);
@@ -85,16 +92,18 @@ void shortBlinky() {  // short led blink function
   }
   Analog_Value[ch] /= 10;
   // wdt_reset();
-} */
+}
 
 /*********************************************************************************************************/
 
 void setup() {
+  Serial.begin(9600);  //debug
   firstBoot();
+  wdt_disable();  // watchdog at bay
 
   slaveID = EEPROM.read(MODBUS_SLAVE_ID_EEPROM_LOCATION);
-  previousSlaveID = EEPROM.read(MODBUS_SLAVE_ID_EEPROM_LOCATION);
-  sensitivityValue = EEPROM.read(SENSITIVITY_EEPROM_LOCATION);
+  sensitivityValueIndex = EEPROM.read(SENSITIVITY_EEPROM_LOCATION);
+  sensitivityValue = sensitivityConsts[sensitivityValueIndex];
 
   pinMode(inputs[0], INPUT_PULLUP);
   pinMode(inputs[1], INPUT_PULLUP);
@@ -109,48 +118,94 @@ void setup() {
   modbus.configureHoldingRegisters(commands, 3);      // first two numbers are used for commands, third is the parameter
   modbus.begin(slaveID, 9600);
 
-  timer.start();  // starting timer..
-  firstBoot();
+  modbusTimer.start();               // starting timer..
+  sensorsTimer.start();              // starting sensors timer
   digitalWrite(PERIPHEAL_POWER, 1);  // peripheal power
-  //Serial.begin(9600);                //debug
+  wdt_enable(WDTO_1S);               // watchdog enabled, on duty
 }
 
 void loop() {
-  discreteInputs[0] = !digitalRead(inputs[0]);  // putting inputs pin data into ModBus variables, digital values are inverted
-  discreteInputs[1] = !digitalRead(inputs[1]);
-  discreteInputs[2] = !digitalRead(inputs[2]);
+  // every 10 seconds, sensor are gathering data:
+  wdt_reset();
+  if (sensorsTimer.read() % sensorsInterval == 0 && !modbusEditMode) {
+    analog_average(0, ANALOG_IN1);
+    delay(5);
+    analog_average(1, ANALOG_IN2);
+    delay(5);
+    analog_average(2, ANALOG_IN3);
+    delay(5);
+    if (Analog_Value[0] > sensitivityValue && Analog_Value[1] > sensitivityValue && Analog_Value[2] > sensitivityValue) {  // everything OK
+      digitalWrite(LED_GREEN, 1);
+      delay(500);
+      digitalWrite(LED_GREEN, 0);
+      discreteInputs[0] = 0;
+      discreteInputs[1] = 0;
+      discreteInputs[2] = 0;
+      alarmSupport = false;
+      alarm = false;
+    } else {  // ALARM!
+      //alarm = true;
+      if (!alarmSupport) {
+        if (Analog_Value[0] < sensitivityValue) discreteInputs[0] = 1;
+        if (Analog_Value[1] < sensitivityValue) discreteInputs[1] = 1;
+        if (Analog_Value[2] < sensitivityValue) discreteInputs[2] = 1;
+        alarm = true;
+      }
+    }
+  }
+  wdt_disable();
 
-  modbus.poll();
+  modbus.poll();  // update ModBus values
 
-  if (commands[0] == 0x00C0 && commands[1] == 0x0050) {  // C050, is the ModBus master's command to update slave ID
-    if (slaveID < 231) {
-      EEPROM.update(1, commands[2]);
-    } else EEPROM.update(1, 1);
+  if (commands[0] == 0x00C0 && commands[1] == 0x0050) {  // C050, is the ModBus master's command to update slave ID (1 - 229)
+    wdt_reset();
+    if (slaveID < 231) {  // if the value is too high, reset the slave ID to 1
+      EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, commands[2]);
+    } else EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, 1);
     blinky();
     delay(1000);
     reboot();
   }
+  wdt_disable();
 
   if (commands[0] == 0x0001 && commands[1] == 0x0001 && commands[2] == 0x0001) {  // 010101 Slave ID reset command
-    EEPROM.update(1, 1);
+    wdt_reset();
+    EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, 1);
     blinky();
     delay(1000);
     reboot();
   }
+  wdt_disable();
 
   if (commands[0] == 0x000A && commands[1] == 0x000A && commands[2] == 0x000A) {  // 0A0A0A red and green led blink test
+    wdt_reset();
     blinky();
     delay(1000);
     reboot();
   }
+  wdt_disable();
 
-  if (!digitalRead(MODBUS_BUTTON)) {  // ModBus button: if released shows on leds ModBus Slave ID, if 5-seconds long press enters Slave ID edit mode
+  if (commands[0] == 0x0005 && commands[1] == 0x0005) {  // 0505: the ModBus command to update sensitivity value (0 - 3)
+    wdt_reset();
+    if (commands[2] < 3) {  // if the value is too high, reset sensitivity level to 0
+      EEPROM.update(SENSITIVITY_EEPROM_LOCATION, commands[2]);
+    } else EEPROM.update(SENSITIVITY_EEPROM_LOCATION, 0);
+    blinky();
+    delay(1000);
+    reboot();
+  }
+  wdt_disable();
+
+  if (!digitalRead(MODBUS_BUTTON) && !alarm) {  // ModBus button: if released shows on leds ModBus Slave ID, if 5-seconds long press enters Slave ID edit mode
     modbusButtonLastStatus = true;
-    timer.resume();
+    modbusTimer.resume();
   } else {
     if (modbusButtonLastStatus && !modbusEditMode) {
       /* Slave ID monitor on leds (release ModBus button):
       Red leds are the units count, green leds are the tens, both leds are for the hundreds */
+      wdt_reset();
+      shortBlinky();
+      delay(500);
       uint8_t units = 0;
       uint8_t tens = 0;
       uint8_t hundreds = 0;
@@ -181,52 +236,54 @@ void loop() {
       }
       if (tens > 0) {
         for (int i = 0; i < tens - ascii; i++) {
-          digitalWrite(LED_GREEN, 1);
-          delay(500);
-          digitalWrite(LED_GREEN, 0);
-          delay(500);
-        }
-      }
-      if (units > 0) {
-        for (int i = 0; i < units - ascii; i++) {
           digitalWrite(LED_RED, 1);
           delay(500);
           digitalWrite(LED_RED, 0);
           delay(500);
         }
       }
+      if (units > 0) {
+        for (int i = 0; i < units - ascii; i++) {
+          digitalWrite(LED_GREEN, 1);
+          delay(500);
+          digitalWrite(LED_GREEN, 0);
+          delay(500);
+        }
+      }
       delay(100);
     }
-    timer.pause();
+    modbusTimer.pause();
     modbusButtonLastStatus = false;
   }
+  wdt_disable();
 
-  if (timer.read() % 5000 == 0 && timer.read() >= 5000) {  // long press ModBus button for 5 seconds to enter edit mode
+  wdt_reset();
+  if (modbusTimer.read() % 5000 == 0 && modbusTimer.read() >= 5000) {  // long press ModBus button for 5 seconds to enter edit mode
     if (!modbusEditMode && !digitalRead(MODBUS_BUTTON)) {
-      timerReboot.start();
-      slaveID--;  // this one because when released ModBus button, slave ID increments by 1
+      modbusTimerReboot.start();
+      blinky();
       modbusEditMode = true;
     }
     delay(100);
   }
+  wdt_disable();
 
-  if (!digitalRead(MODBUS_BUTTON) && modbusEditMode) {  // EEPROM update condition
-    timerReboot.stop();
+  if (!digitalRead(MODBUS_BUTTON) && modbusEditMode && !alarm) {  // EEPROM update condition
+    modbusTimerReboot.stop();
     if (slaveID < 231) {
       slaveID++;
-      EEPROM.update(1, slaveID);  // updating the EEPROM...
+      EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, slaveID);  // updating the EEPROM...
     } else slaveID = 1;
     shortBlinky();
-    timerReboot.start();
+    modbusTimerReboot.start();
     delay(100);
   }
 
   /* if Slave ID edit mode is idle for 10 seconds, board reboots
   if Slave ID is unchanged, value will be reseto to 1 */
-  if (modbusEditMode && timerReboot.read() == 10000) {
-    if (slaveID == previousSlaveID) {
-      EEPROM.update(1, 1);
-    }
+  if (modbusEditMode && modbusTimerReboot.read() == 10000) {
+    if (slaveID == 0) EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, 1);
+    else EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, slaveID);
     blinky();
     reboot();
   }
@@ -235,24 +292,28 @@ void loop() {
     1: red led only
     2: green led only
     3: both green and red leds
-*/
-  if (!digitalRead(SENSITIVITY_BUTTON) && !modbusEditMode) {
-    if (sensitivityValue < 4) sensitivityValue++;
-    else sensitivityValue = 1;
-    EEPROM.update(SENSITIVITY_EEPROM_LOCATION, sensitivityValue);
+  */
+  wdt_reset();
+  if (!digitalRead(SENSITIVITY_BUTTON) && !modbusEditMode && !alarm) {
+    shortBlinky();
+    delay(100);
+    if (sensitivityValueIndex < 2) ++sensitivityValueIndex;
+    else sensitivityValueIndex = 0;
+    EEPROM.update(SENSITIVITY_EEPROM_LOCATION, sensitivityValueIndex);
+    sensitivityValue = sensitivityConsts[sensitivityValueIndex];
 
-    switch (sensitivityValue) {
-      case 1:
+    switch (sensitivityValueIndex) {
+      case 0:
         digitalWrite(LED_RED, 1);
         delay(1000);
         digitalWrite(LED_RED, 0);
         break;
-      case 2:
+      case 1:
         digitalWrite(LED_GREEN, 1);
         delay(1000);
         digitalWrite(LED_GREEN, 0);
         break;
-      case 3:
+      case 2:
         digitalWrite(LED_RED, 1);
         digitalWrite(LED_GREEN, 1);
         delay(1000);
@@ -261,4 +322,28 @@ void loop() {
         break;
     }
   }
+  wdt_disable();
+
+  wdt_reset();
+  if (alarm && ((sensorsTimer.read() % sensorsInterval == 0) || !digitalRead(MODBUS_BUTTON) || !digitalRead(SENSITIVITY_BUTTON))) {  // ALARM led disable
+    alarm = false;
+    alarmSupport = true;
+
+    discreteInputs[0] = 0;
+    discreteInputs[1] = 0;
+    discreteInputs[2] = 0;
+    modbus.poll();
+
+    delay(300);
+  }
+  wdt_disable();
+
+  if (alarm) {  // ALARM led blink
+    wdt_reset();
+    digitalWrite(LED_RED, 1);
+    delay(150);
+    digitalWrite(LED_RED, 0);
+    delay(150);
+  }
+  wdt_disable();
 }
