@@ -1,0 +1,96 @@
+EP400v2 Water leakage sensor, documentazione:
+
+Il dispositivo si presenta come in Figura-1, una volta connessi i sensori
+nelle rispettive porte, e una volta connesso alla porta I/O, il dispositivo
+verrà alimentato automaticamente.
+
+PINOUT:
+PIN 1: 12V/24V+
+PIN 2: GND
+PIN 3: ModBus A
+PIN 4: MOdBus B
+
+Il led verde inizierà a lampeggiare ogni 4 secondi: il dispositivo è in modalità
+di default.
+
+
+FUNZIONI DEI PULSANTI
+
+Premendo il bottone destro si potrà modificare la sensibilità dei sensori,
+i due led lampeggeranno velocemente e indicheranno il valore secondo lo schema
+qui in basso:
+
+LED Rosso acceso:   1
+LED Verde acceso:   2
+LED Entrami accesi: 3
+
+Premendo il bottone sinistro verrà visualizzato attraverso il conteggio LED
+lo slave ID del ModBus, i due prima led lampeggeranno velocemente e in
+seguito lampeggeranno ognuno per un secondo per indicare le cifre
+secondo lo schema qui in basso:
+
+LED Entrambi accesi: centinaia
+LED Rosso acceso: decine
+LED verde acceso: unità
+
+Premendo il bottone sinistro per 5 secondi si entrerà nella modalità
+di modifica del ModBus slave ID: i led lampeggeranno moderatamente
+indicando che si può rilasciare il bottone, da questo momento
+è possibile incrementare il valore del ModBus slave ID premendo
+il bottone sinistro, entrambi i led lampeggeranno velocemente per
+segnalare la modifica effettuata. Attendere 10 secondi senza premere
+alcun pulsante, il dispositivo si riavvierà applicando le modifiche.
+
+
+CONTROLLO DEL DISPOSITIVO TRAMITE SOFTWARE ESTERNO MODBUS MASTER
+
+Scaricare QModMaster da https://sourceforge.net/projects/qmodmaster/
+e scompattare l'archivio ZIP, il sofware gira su Windows.
+
+Una volta avviato il programma, comparirà una schermata simile
+alla Figura-2, accedendo al menù Options/ModBus RTU si potranno
+configurare le impostazioni di connessione (vedere Figura-3)
+una volta settate è possibile connettersi inserendo l'ID dello
+slave nella voce "Slave Addr" e connettersi dalla voce del 
+menù Commands/Connect.
+
+Dal menù Function Code è possibile scegliere l'operazione da
+far eseguire al dispositivo: le operazioni possibili 
+sull'EP400v2 Water leakage sensor sono le seguenti:
+
+IMPORTANTE! Impostare il numero di input e di registri a 3.
+
+0x02 Read Discrete Inputs: visualizza lo stato dei 3 sensori
+0x10 Write Multiple Registerx: immette i comandi
+
+
+COMANDI DEI REGISTRI
+
+E' possibile inviare dei comandi al dispositivo attraverso
+la funzione 0x20 Write Multiple Registers, i comandi e i
+corrispettivi valori vengono inviati in formato esadecimale,
+i comandi a disposizione sono:
+
+C0 50 XX - Modifica dello slave ID, nelle XX va il valore
+		   esadecimale del nuovo slave ID, sono consentiti
+		   valori per lo slave ID da 1 a E5 (229) valori
+		   più alti setteranno l'ID a 1
+		   
+01 01 01 - Resetta il ModBus slave ID a 1
+
+05 05 XX - Modifica il valore di sensibilità, sono ammessi
+		   valori da 0 a 2, un valore più alto setterà la
+		   sensibilità a 0
+		   
+Inviare i dati selezionando la voce Commands/Read / Write,
+i led lampeggeranno brevemente e le modifiche saranno applicate.
+
+ALLARME
+
+Il superamento di una determinata soglia da parte dei sensori
+porterà il dispositivo in allarme: durante l'allarme
+il led rosso lampeggerà regolarmente. Per visualizzare il
+sensore responsabile dell'allarme utilizzare su QModMaster
+il comando 0x02 Read Discrete Inputs, il sensore responsabile
+avrà valore 1. Per disattivare l'allarme premere uno dei due
+bottoni sul dispositivo.
