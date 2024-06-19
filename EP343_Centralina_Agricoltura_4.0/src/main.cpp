@@ -1,42 +1,18 @@
-/*************************************************** 
-
-ESPertino Board
-ESP32
-
-Select board: ESP32 dev module
-upload speed 92160
-CPU frequency 240Mhz
-Flash frequency 80Mhz
-Flash mode QIO
-Flash size 4MB(32Mb)
-
-
- ****************************************************/
-
-// include library to read and write from flash memory
 #include <EEPROM.h>
-
-// define the number of bytes you want to access
-#define EEPROM_SIZE 5
-#define EEPROM_START_LOCATION 1
-#define EEPROM_END_LOCATION 2
-#define EEPROM_STATE_LOCATION 3
-#define EEPROM_IRRIGATION_STATE_LOCATION 4
-
-#define TEMPOACCESO 1
-#define TEMPOSPENTO 2
-
 #include <BluetoothSerial.h>
-
 #include <Timer.h>
+#include "VirtuinoCM.h"
 
 #if!defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
 #error Bluetooth is not enabled!Please run `make menuconfig`
 to and enable it
 #endif
 
-BluetoothSerial SerialBT;
-
+#define EEPROM_SIZE 5
+#define EEPROM_START_LOCATION 1
+#define EEPROM_END_LOCATION 2
+#define EEPROM_STATE_LOCATION 3
+#define EEPROM_IRRIGATION_STATE_LOCATION 4
 //Pin mapping
 #define RELAY_1 14
 #define RELAY_2 12
@@ -44,22 +20,18 @@ BluetoothSerial SerialBT;
 #define LED_2 13
 #define PULSANTE23 23
 #define PULSANTE19 19
-#define MILLIORA 3600000
-
-#include "VirtuinoCM.h"
-
-VirtuinoCM virtuino;
+#define MILLIORA 3600000 // costante di un'ora in millisecondi
 #define V_memory_count 5 // the size of V memory. You can change it to a number <=255)
+
 long V[V_memory_count]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
-
 boolean debug = 0; // set this variable to false on the finale code to decrease the request time.
-
 boolean pulsante23controllo = 0;
-
 byte stato = 1;
-
 int inizio;
 int fine;
+
+BluetoothSerial SerialBT;
+VirtuinoCM virtuino;
 Timer timerGlobale;
 Timer timerInizio;
 Timer timerFine;
@@ -177,23 +149,15 @@ void loop() {
   /* se la durata di irrigazione è maggiore dell'intervallo, 
   la durata verà settata come l'intervallo stesso */ if (V[2] > V[1]) V[2] = V[1]; 
 
+  //==================================================================== controllo stati (1 o 2)
   if ((digitalRead(PULSANTE19) && digitalRead(PULSANTE23)) ||
      (digitalRead(PULSANTE19) && !digitalRead(PULSANTE23))) stato = 1;
   if (!digitalRead(PULSANTE19) && digitalRead(PULSANTE23)) stato = 2;
 
-  /*Serial.println("V2: ");
-  Serial.print(V[2]);*/
-  // Serial.println(V[3]);
-  // Serial.println(stato);
-  /*Serial.println("______________________________");
-  Serial.println(EEPROM.read(EEPROM_START_LOCATION));
-  Serial.println(EEPROM.read(EEPROM_END_LOCATION));
-  Serial.println(EEPROM.read(EEPROM_STATE_LOCATION));*/
-
   switch (stato) 
   {
   case 1:
-    // modalità automatica
+    //==================================================================== modalità automatica
     //Serial.println(stato);
     V[3] = 1;
     spegni_irrigazione();
@@ -211,7 +175,7 @@ void loop() {
     }
     break;
   case 2:
-    // modalità manuale
+    //==================================================================== modalità manuale
     //Serial.println(stato);
     V[3] = 2;
     timerInizio.stop(); // disabilita (e resetta) il timer della modalità automatica
@@ -235,6 +199,7 @@ void loop() {
   //////////////////////////
 
   vDelay(10); // This is an example of the recommended delay function. Remove this if you don't need
+  //==================================================================== aggiornamento valori in EEPROM
   if (EEPROM.read(EEPROM_START_LOCATION) != V[1]) EEPROM.write(EEPROM_START_LOCATION, V[1]);
   if (EEPROM.read(EEPROM_END_LOCATION) != V[2]) EEPROM.write(EEPROM_END_LOCATION, V[2]);
   if (EEPROM.read(EEPROM_STATE_LOCATION) != V[3]) EEPROM.write(EEPROM_STATE_LOCATION, V[3]);
