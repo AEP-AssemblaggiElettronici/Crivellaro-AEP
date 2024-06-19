@@ -151,8 +151,10 @@ void setup() {
 void loop() {
   virtuinoRun(); // Necessary function to communicate with Virtuino. Client handler
 
+  // lettura valori per output su app
   V[5] = timerGlobale.read();
   V[6] = (V[1] * MILLIORA) - (timerInizio.read() % (V[1] * MILLIORA));
+
   //Serial.println((V[1] * MILLIORA) - (timerInizio.read() % (V[1] * MILLIORA)));
   // enter your code below. Avoid to use delays on this loop. Instead of the default delay function use the vDelay that is located on the bottom of this code
   // You don't need to add code to read or write to the pins. Just enter the  pinMode of each Pin you want to use on void setup
