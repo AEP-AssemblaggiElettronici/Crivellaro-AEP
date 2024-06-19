@@ -20,7 +20,7 @@ to and enable it
 #define PULSANTE23 23
 #define PULSANTE19 19
 #define MILLIORA 3600000 // costante di un'ora in millisecondi
-#define V_memory_count 5 // the size of V memory. You can change it to a number <=255)
+#define V_memory_count 8 // the size of V memory. You can change it to a number <=255)
 
 long V[V_memory_count]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
 boolean debug = 0; // set this variable to false on the finale code to decrease the request time.
@@ -141,7 +141,8 @@ void setup() {
   V[1] = EEPROM.read(EEPROM_START_LOCATION); // valore intervallo irrigazione
   V[2] = EEPROM.read(EEPROM_END_LOCATION); // valore durata irrigazione
   V[3] = EEPROM.read(EEPROM_STATE_LOCATION); // valore stato dispositivo (1 o 2)
-  V[4] = 0;
+  V[4] = 0; // valore indicatore irrigazione
+  V[5] = 0; // valore timer globale
 
   timerGlobale.start();
   timers_reset();
@@ -150,6 +151,9 @@ void setup() {
 void loop() {
   virtuinoRun(); // Necessary function to communicate with Virtuino. Client handler
 
+  V[5] = timerGlobale.read();
+  V[6] = (V[1] * MILLIORA) - (timerInizio.read() % (V[1] * MILLIORA));
+  //Serial.println((V[1] * MILLIORA) - (timerInizio.read() % (V[1] * MILLIORA)));
   // enter your code below. Avoid to use delays on this loop. Instead of the default delay function use the vDelay that is located on the bottom of this code
   // You don't need to add code to read or write to the pins. Just enter the  pinMode of each Pin you want to use on void setup
   //========================================================= Stati e funzioni pulsanti
