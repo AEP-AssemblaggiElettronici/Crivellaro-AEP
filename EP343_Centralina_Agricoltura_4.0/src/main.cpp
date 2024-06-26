@@ -13,8 +13,8 @@ to and enable it
 #define EEPROM_END_LOCATION 2
 #define EEPROM_STATE_LOCATION 3
 //Pin mapping
-#define RELAY_1 14
-#define RELAY_2 12
+#define RELAY_1 32
+#define RELAY_2 33
 #define LED_1 5
 #define LED_2 13
 #define PULSANTE23 23
@@ -86,14 +86,18 @@ void vDelay(int delayInMillis) {
 void accendi_irrigazione() {
   V[4] = 1;
   digitalWrite(RELAY_1, 1);
+  digitalWrite(RELAY_2, 0);
   vDelay(1500);
   digitalWrite(RELAY_1, 0);
+  digitalWrite(RELAY_2, 0);
 }
 
 void spegni_irrigazione() {
   V[4] = 0;
+  digitalWrite(RELAY_1, 0);
   digitalWrite(RELAY_2, 1);
   vDelay(1500);
+  digitalWrite(RELAY_1, 0);
   digitalWrite(RELAY_2, 0);
 }
 
@@ -167,11 +171,7 @@ void loop() {
   if (((digitalRead(PULSANTE19) && digitalRead(PULSANTE23)) ||
      (digitalRead(PULSANTE19) && !digitalRead(PULSANTE23))) &&
      !controlloStato3) stato = 1; // stato modalità AUTO
-  if (!digitalRead(PULSANTE19) && digitalRead(PULSANTE23)) // stato modalità MANUALE
-  {
-    spegni_irrigazione();
-    stato = 2;
-  }
+  if (!digitalRead(PULSANTE19) && digitalRead(PULSANTE23)) stato = 2;
 
   switch (stato) 
   {
