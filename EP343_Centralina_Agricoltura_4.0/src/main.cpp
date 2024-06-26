@@ -8,10 +8,11 @@
 to and enable it
 #endif
 
-#define EEPROM_SIZE 4
+#define EEPROM_SIZE 5
 #define EEPROM_START_LOCATION 1
 #define EEPROM_END_LOCATION 2
 #define EEPROM_STATE_LOCATION 3
+#define EEPROM_DELAY_LOCATION 4
 //Pin mapping
 #define RELAY_1 32
 #define RELAY_2 33
@@ -19,14 +20,16 @@ to and enable it
 #define LED_2 13
 #define PULSANTE23 23
 #define PULSANTE19 19
-#define MILLIORA 3600000 // costante di un'ora in millisecondi
-#define V_memory_count 8 // the size of V memory. You can change it to a number <=255)
+#define MILLIORA 1000//3600000 // costante di un'ora in millisecondi
+#define V_memory_count 12 // the size of V memory. You can change it to a number <=255)
 
 long V[V_memory_count]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
 boolean debug = 0; // set this variable to false on the finale code to decrease the request time.
 boolean pulsante23controllo = 0;
 boolean controlloStato3 = 0;
 boolean irrigazioneManualeControlloApp = 0;
+boolean primaIrrigazione = 0; // stato della prima irrigazione, per settare il ritardo
+boolean irrigazioneAuto;
 byte stato = 1;
 int inizio;
 int fine;
@@ -35,8 +38,10 @@ int sogliaIrrigazione = 0;
 BluetoothSerial SerialBT;
 VirtuinoCM virtuino;
 Timer timerGlobale;
-Timer timerInizio;
-Timer timerFine;
+Timer timerManuale;
+Timer timerRitardo;
+Timer timerIntervallo;
+Timer timerDurata;
 //============================================================== onCommandReceived
 //==============================================================
 /* This function is called every time Virtuino app sends a request to server to change a Pin value
@@ -84,7 +89,7 @@ void vDelay(int delayInMillis) {
 
 //============================================================== funzioni irrigazione
 void accendi_irrigazione() {
-  V[4] = 1;
+  irrigazioneManualeControlloApp = 1;
   digitalWrite(RELAY_1, 1);
   digitalWrite(RELAY_2, 0);
   vDelay(1500);
@@ -93,7 +98,7 @@ void accendi_irrigazione() {
 }
 
 void spegni_irrigazione() {
-  V[4] = 0;
+  irrigazioneManualeControlloApp = 0;
   digitalWrite(RELAY_1, 0);
   digitalWrite(RELAY_2, 1);
   vDelay(1500);
@@ -102,10 +107,10 @@ void spegni_irrigazione() {
 }
 
 void timers_reset() {
-  timerFine.start();
-  timerFine.pause();
-  timerInizio.start();
-  timerInizio.pause();
+  timerDurata.start();
+  timerDurata.pause();
+  timerIntervallo.start();
+  timerIntervallo.pause();
 }
 
 //============================================================================
@@ -138,6 +143,7 @@ void setup() {
     EEPROM.write(EEPROM_START_LOCATION, 12);
     EEPROM.write(EEPROM_END_LOCATION, 1);
     EEPROM.write(EEPROM_STATE_LOCATION, 1);
+    EEPROM.write(EEPROM_DELAY_LOCATION, 12);
     EEPROM.commit();
   }
 
@@ -147,19 +153,23 @@ void setup() {
   V[3] = EEPROM.read(EEPROM_STATE_LOCATION); // valore stato dispositivo (1 o 2)
   V[4] = 0; // valore indicatore irrigazione
   V[5] = 0; // valore timer globale
+  V[9] = EEPROM.read(EEPROM_DELAY_LOCATION); // valore durata ritardo irrigazione
 
   timerGlobale.start();
-  timers_reset();
+  timerGlobale.pause();
 } // Close Setup
+
+int ritardo;
 
 void loop() {
   virtuinoRun(); // Necessary function to communicate with Virtuino. Client handler
 
   // lettura valori per output su app
-  V[5] = timerGlobale.read();
-  V[6] = (V[1] * MILLIORA) - (timerInizio.read() % (V[1] * MILLIORA));
+  V[5] = timerManuale.read();
+  V[6] = (V[1] * MILLIORA) - (timerDurata.read() % (V[1] * MILLIORA)); // visualizzatore tempo intervallo
+  V[7] = timerGlobale.read();
 
-  //Serial.println((V[1] * MILLIORA) - (timerInizio.read() % (V[1] * MILLIORA)));
+  //Serial.println((V[1] * MILLIORA) - (timerIntervallo.read() % (V[1] * MILLIORA)));
   // enter your code below. Avoid to use delays on this loop. Instead of the default delay function use the vDelay that is located on the bottom of this code
   // You don't need to add code to read or write to the pins. Just enter the  pinMode of each Pin you want to use on void setup
   //========================================================= Stati e funzioni pulsanti
@@ -176,66 +186,86 @@ void loop() {
   switch (stato) 
   {
   case 1:
-    //modalità automatica
+    ////////////////////////////////////////////////////////////////////// modalità automatica
     //Serial.println(stato);
     V[3] = 1; // salviamo il valore della modalità automatica
+    irrigazioneAuto = 1;
     if (!digitalRead(PULSANTE23) && stato == 1); // SUCCEDE NIENTE!
-    timerInizio.resume();
-    sogliaIrrigazione = timerInizio.read() % (V[1] * MILLIORA);
+    if (primaIrrigazione) // controllo prima irrigazione programmata, per settare il ritardo (0 incomincia subito)
+    {
+      primaIrrigazione = !primaIrrigazione;
+      sogliaIrrigazione = V[9] * MILLIORA;
+      timerIntervallo.start();
+      if (sogliaIrrigazione == 0) sogliaIrrigazione = -1;
+    } else sogliaIrrigazione = timerIntervallo.read();
     //Serial.println(sogliaIrrigazione); // DEBUG
-    if (sogliaIrrigazione >= (V[1] * MILLIORA) - 600)
+    if (sogliaIrrigazione >= (V[1] * MILLIORA) - 600 || sogliaIrrigazione == -1)
     {
       controlloStato3 = true; // accendi irrigazione
+      timerIntervallo.start();
+      timerIntervallo.stop();
       stato = 3;
     }
-    if (timerFine.read() >= V[2] * MILLIORA) // fine irrigazione
+    if (timerDurata.read() >= V[2] * MILLIORA) // fine irrigazione
     {
       spegni_irrigazione();
       Serial.println("SPEGNI IRRIGAZIONE (AUTO)");
-      timerFine.start();
-      timerFine.pause();
+      timerDurata.start();
+      timerDurata.stop();
+      timerGlobale.pause();
+      timerIntervallo.start();
     }
     break;
   case 2:
-    // modalità manuale
+    ////////////////////////////////////////////////////////////////////// modalità manuale
     //Serial.println(stato);
     V[3] = 2; // salviamo il valore della modalità manuale
-    timers_reset();
+    primaIrrigazione = true; // resetta il controllo ritardo irrigazione per la modalità automatica
+    if (irrigazioneAuto)
+    {
+      spegni_irrigazione();
+      irrigazioneAuto = 0;
+    }
+    timers_reset(); // resetta i timer di irrigazione globale e manuale
     if (!digitalRead(PULSANTE23) && stato == 2 && pulsante23controllo)
     {
       Serial.println("IRRIGAZIONE (MANUALE)");
       accendi_irrigazione();
-      irrigazioneManualeControlloApp = true;
+      timerManuale.start();
+      timerGlobale.resume();
       pulsante23controllo = !pulsante23controllo;
     } 
     if (digitalRead(PULSANTE23) && stato == 2 && !pulsante23controllo)
     {
       Serial.println("SPEGNI IRRIGAZIONE (MANUALE)");
       spegni_irrigazione();
-      irrigazioneManualeControlloApp = false;
+      timerManuale.stop();
+      timerGlobale.pause();
       pulsante23controllo = !pulsante23controllo;
     }
     break;
-  case 3: // irrigazione (ha uno stato a parte)
-    if (!digitalRead(PULSANTE23) && stato == 1); // SUCCEDE NIENTE!
+  case 3: 
+    ////////////////////////////////////////////////////////////////////// irrigazione (ha uno stato a parte)
+    if (!digitalRead(PULSANTE23)); // SUCCEDE NIENTE!
     Serial.println("ACCENDI IRRIGAZIONE (AUTO)");
     accendi_irrigazione();
-    timerFine.resume();
+    timerGlobale.resume();
+    timerDurata.start();
     controlloStato3 = false;
     break;
   }
 
-  if (irrigazioneManualeControlloApp) // spegne l'icona sull'app
-  {
-    V[4] = 0;
-    irrigazioneManualeControlloApp = false;
-  } 
+  if (!irrigazioneManualeControlloApp) V[4] = 0;// spegne l'icona sull'app
+  else V[4] = 1; // on in alternativa la accende
+    
   //////////////////////////
 
   vDelay(10); // This is an example of the recommended delay function. Remove this if you don't need
+
   //==================================================================== aggiornamento valori in EEPROM
   if (EEPROM.read(EEPROM_START_LOCATION) != V[1]) EEPROM.write(EEPROM_START_LOCATION, V[1]);
   if (EEPROM.read(EEPROM_END_LOCATION) != V[2]) EEPROM.write(EEPROM_END_LOCATION, V[2]);
   if (EEPROM.read(EEPROM_STATE_LOCATION) != V[3]) EEPROM.write(EEPROM_STATE_LOCATION, V[3]);
+  if (EEPROM.read(EEPROM_DELAY_LOCATION) != V[9]) EEPROM.write(EEPROM_DELAY_LOCATION, V[9]);
   EEPROM.commit();
 } //Close Loop
