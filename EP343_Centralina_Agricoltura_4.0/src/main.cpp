@@ -36,7 +36,7 @@ int sogliaIrrigazione = 0;
 BluetoothSerial SerialBT;
 VirtuinoCM virtuino;
 Timer timerGlobale;
-Timer timerManuale;
+Timer timerManuale; // variabile timer irrigazione manuale, non è utilizzata per limiti dell'app non a pagamento
 Timer timerRitardo;
 Timer timerIntervallo;
 Timer timerDurata;
