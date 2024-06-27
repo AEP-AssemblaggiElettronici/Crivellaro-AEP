@@ -20,7 +20,7 @@ to and enable it
 #define LED_2 13
 #define PULSANTE23 23
 #define PULSANTE19 19
-#define MILLIORA 1000//3600000 // costante di un'ora in millisecondi
+#define MILLIORA 3600000 // costante di un'ora in millisecondi
 #define V_memory_count 12 // the size of V memory. You can change it to a number <=255)
 
 long V[V_memory_count]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
