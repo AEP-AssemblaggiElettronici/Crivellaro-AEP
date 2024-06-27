@@ -31,8 +31,6 @@ boolean irrigazioneManualeControlloApp = 0;
 boolean primaIrrigazione = 0; // stato della prima irrigazione, per settare il ritardo
 boolean irrigazioneAuto;
 byte stato = 1;
-int inizio;
-int fine;
 int sogliaIrrigazione = 0;
 
 BluetoothSerial SerialBT;
@@ -165,8 +163,8 @@ void loop() {
   virtuinoRun(); // Necessary function to communicate with Virtuino. Client handler
 
   // lettura valori per output su app
-  V[5] = timerManuale.read();
-  V[6] = (V[1] * MILLIORA) - (timerDurata.read() % (V[1] * MILLIORA)); // visualizzatore tempo intervallo
+  V[5] = (V[2] * MILLIORA) - (timerDurata.read() % (V[2] * MILLIORA));
+  V[6] = (V[1] * MILLIORA) - (timerIntervallo.read() % (V[1] * MILLIORA)); // visualizzatore tempo intervallo
   V[7] = timerGlobale.read();
 
   //Serial.println((V[1] * MILLIORA) - (timerIntervallo.read() % (V[1] * MILLIORA)));
