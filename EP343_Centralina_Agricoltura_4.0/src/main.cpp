@@ -194,7 +194,7 @@ void loop() {
       primaIrrigazione = !primaIrrigazione;
       sogliaIrrigazione = V[9] * MILLIORA;
       timerIntervallo.start();
-      if (sogliaIrrigazione == 0) sogliaIrrigazione = -1;
+      if (sogliaIrrigazione == 0) sogliaIrrigazione = -1; // inizia subito ad irrigare, senza ritardo
     } else sogliaIrrigazione = timerIntervallo.read();
     //Serial.println(sogliaIrrigazione); // DEBUG
     if (sogliaIrrigazione >= (V[1] * MILLIORA) - 600 || sogliaIrrigazione == -1)
