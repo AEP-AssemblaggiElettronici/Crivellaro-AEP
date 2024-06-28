@@ -153,8 +153,10 @@ void setup() {
   V[5] = 0; // valore timer globale
   V[9] = EEPROM.read(EEPROM_DELAY_LOCATION); // valore durata ritardo irrigazione
 
-  timerGlobale.start();
+  timerGlobale.start(); // inizializzazione timer
   timerGlobale.pause();
+  timerIntervallo.start();
+  timerIntervallo.pause();
 } // Close Setup
 
 int ritardo;
@@ -192,7 +194,7 @@ void loop() {
     if (primaIrrigazione) // controllo prima irrigazione programmata, per settare il ritardo (0 incomincia subito)
     {
       sogliaIrrigazione = V[9] * MILLIORA;
-      timerIntervallo.start();
+      timerIntervallo.resume();
       if (sogliaIrrigazione == 0) sogliaIrrigazione = -1; // inizia subito ad irrigare, senza ritardo
     } else sogliaIrrigazione = timerIntervallo.read();
     //Serial.println(sogliaIrrigazione); // DEBUG
@@ -224,7 +226,7 @@ void loop() {
       spegni_irrigazione();
       irrigazioneAuto = 0;
     }
-    timers_reset(); // resetta i timer di irrigazione globale e manuale
+    timers_reset(); // resetta i timer di irrigazione
     if (!digitalRead(PULSANTE23) && stato == 2 && pulsante23controllo)
     {
       Serial.println("IRRIGAZIONE (MANUALE)");
