@@ -20,7 +20,7 @@ to and enable it
 #define LED_2 13
 #define PULSANTE23 23
 #define PULSANTE19 19
-#define MILLIORA 3600000 // costante di un'ora in millisecondi
+#define MILLIVAR 60000 //3600000 // costante di un'ora in millisecondi, merrere 600000 per misurare in minuti, 1000 in secondi...
 #define V_memory_count 12 // the size of V memory. You can change it to a number <=255)
 
 long V[V_memory_count]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
@@ -32,6 +32,7 @@ boolean primaIrrigazione = 0; // stato della prima irrigazione, per settare il r
 boolean irrigazioneAuto;
 byte stato = 1;
 int sogliaIrrigazione = 0;
+int valoreTempo;
 
 BluetoothSerial SerialBT;
 VirtuinoCM virtuino;
@@ -163,13 +164,9 @@ int ritardo;
 
 void loop() {
   virtuinoRun(); // Necessary function to communicate with Virtuino. Client handler
-
-  // lettura valori per output su app
-  V[5] = (V[2] * MILLIORA) - (timerDurata.read() % (V[2] * MILLIORA));
-  V[6] = (V[1] * MILLIORA) - (timerIntervallo.read() % (V[1] * MILLIORA)); // visualizzatore tempo intervallo
   V[7] = timerGlobale.read();
 
-  //Serial.println((V[1] * MILLIORA) - (timerIntervallo.read() % (V[1] * MILLIORA)));
+  //Serial.println((V[1] * MILLIVAR) - (timerIntervallo.read() % (V[1] * MILLIVAR)));
   // enter your code below. Avoid to use delays on this loop. Instead of the default delay function use the vDelay that is located on the bottom of this code
   // You don't need to add code to read or write to the pins. Just enter the  pinMode of each Pin you want to use on void setup
   //========================================================= Stati e funzioni pulsanti
@@ -190,15 +187,16 @@ void loop() {
     //Serial.println(stato);
     V[3] = 1; // salviamo il valore della modalità automatica
     irrigazioneAuto = 1;
+    timerIntervallo.resume();
+    sogliaIrrigazione = timerIntervallo.read();
     if (!digitalRead(PULSANTE23) && stato == 1); // SUCCEDE NIENTE!
     if (primaIrrigazione) // controllo prima irrigazione programmata, per settare il ritardo (0 incomincia subito)
     {
-      sogliaIrrigazione = V[9] * MILLIORA;
-      timerIntervallo.resume();
-      if (sogliaIrrigazione == 0) sogliaIrrigazione = -1; // inizia subito ad irrigare, senza ritardo
-    } else sogliaIrrigazione = timerIntervallo.read();
-    //Serial.println(sogliaIrrigazione); // DEBUG
-    if (sogliaIrrigazione >= (V[1] * MILLIORA) - 600 || sogliaIrrigazione == -1) // se la soglia di irrigazione raggiunge un valore vicino a quello dell'intervallo settato, parte l'irrigazione
+      valoreTempo = V[9];
+      if (V[9] == 0) sogliaIrrigazione = -100; // inizia subito ad irrigare, senza ritardo
+    } else valoreTempo = V[1];
+    //Serial.println(valoreTempo); // DEBUG
+    if (sogliaIrrigazione >= (valoreTempo * MILLIVAR) - 600 || sogliaIrrigazione == -100) // se la soglia di irrigazione raggiunge un valore vicino a quello dell'intervallo settato, parte l'irrigazione
     {
       controlloStato3 = true; // accendi irrigazione
 	  if (primaIrrigazione) primaIrrigazione = 0;
@@ -206,7 +204,7 @@ void loop() {
       timerIntervallo.stop();
       stato = 3;
     }
-    if (timerDurata.read() >= V[2] * MILLIORA) // fine irrigazione
+    if (timerDurata.read() >= V[2] * MILLIVAR) // fine irrigazione
     {
       spegni_irrigazione();
       Serial.println("SPEGNI IRRIGAZIONE (AUTO)");
@@ -215,6 +213,8 @@ void loop() {
       timerGlobale.pause();
       timerIntervallo.start();
     }
+    V[5] = (V[2] * MILLIVAR) - (timerDurata.read() % (V[2] * MILLIVAR));
+    V[6] = (valoreTempo * MILLIVAR) - (timerIntervallo.read() % (valoreTempo * MILLIVAR)); // visualizzatore tempo intervallo
     break;
   case 2:
     ////////////////////////////////////////////////////////////////////// modalità manuale
@@ -224,6 +224,7 @@ void loop() {
     if (irrigazioneAuto)
     {
       spegni_irrigazione();
+      timerGlobale.pause();
       irrigazioneAuto = 0;
     }
     timers_reset(); // resetta i timer di irrigazione
