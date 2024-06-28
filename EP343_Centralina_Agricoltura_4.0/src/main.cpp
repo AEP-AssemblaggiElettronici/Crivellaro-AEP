@@ -190,10 +190,11 @@ void loop() {
     timerIntervallo.resume();
     sogliaIrrigazione = timerIntervallo.read();
     if (!digitalRead(PULSANTE23) && stato == 1); // SUCCEDE NIENTE!
-    if (primaIrrigazione) valoreTempo = V[9]; // controllo prima irrigazione programmata
+    if (primaIrrigazione && V[9] != 00) valoreTempo = V[9]; // controllo prima irrigazione programmata
+    else if (primaIrrigazione && V[9] == 0) sogliaIrrigazione = -1;
     else valoreTempo = V[1];
     //Serial.println(valoreTempo); // DEBUG
-    if (sogliaIrrigazione >= valoreTempo * MILLIVAR || valoreTempo == 0) // se la soglia di irrigazione raggiunge un valore vicino a quello dell'intervallo settato, parte l'irrigazione
+    if (sogliaIrrigazione >= valoreTempo * MILLIVAR || sogliaIrrigazione == -1) // se la soglia di irrigazione raggiunge un valore vicino a quello dell'intervallo settato, parte l'irrigazione
     {
       controlloStato3 = true; // accendi irrigazione
 	  if (primaIrrigazione) primaIrrigazione = 0;
