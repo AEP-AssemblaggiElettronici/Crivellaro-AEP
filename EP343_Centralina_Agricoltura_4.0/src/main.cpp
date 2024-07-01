@@ -13,6 +13,7 @@ to and enable it
 #define EEPROM_END_LOCATION 2
 #define EEPROM_STATE_LOCATION 3
 #define EEPROM_DELAY_LOCATION 4
+#define EEPROM_ORAMINUTISWITCH_LOCATION 10
 //Pin mapping
 #define RELAY_1 32
 #define RELAY_2 33
@@ -20,16 +21,18 @@ to and enable it
 #define LED_2 13
 #define PULSANTE23 23
 #define PULSANTE19 19
-#define MILLIVAR 60000 //3600000 // costante di un'ora in millisecondi, merrere 600000 per misurare in minuti, 1000 in secondi...
-#define V_memory_count 12 // the size of V memory. You can change it to a number <=255)
+#define MILLIORA 3600000 // costante di un'ora in millisecondi
+#define MILLIMINUTO 60000 // costante di un minuto in millisecondi
+#define V_MEMORY_SIZE 12 // the size of V memory. You can change it to a number <=255)
 
-long V[V_memory_count]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
+long V[V_MEMORY_SIZE]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
 boolean debug = 0; // set this variable to false on the finale code to decrease the request time.
 boolean pulsante23controllo = 0;
 boolean controlloStato3 = 0;
 boolean irrigazioneManualeControlloApp = 0;
 boolean primaIrrigazione = 0; // stato della prima irrigazione, per settare il ritardo
 boolean irrigazioneAuto;
+unsigned int oreOminuti; // questa variabile prenderà i valori o di MILLIORA o di MILLIMINUTO (V[10])
 byte stato = 1;
 int sogliaIrrigazione = 0;
 int valoreTempo;
@@ -50,7 +53,7 @@ Timer timerDurata;
 void onReceived(char variableType, uint8_t variableIndex, String valueAsText) {
   if (variableType == 'V') {
     float value = valueAsText.toFloat(); // convert the value to float. The valueAsText have to be numerical
-    if (variableIndex < V_memory_count) V[variableIndex] = value; // copy the received value to arduino V memory array
+    if (variableIndex < V_MEMORY_SIZE) V[variableIndex] = value; // copy the received value to arduino V memory array
   }
 }
 
@@ -58,7 +61,7 @@ void onReceived(char variableType, uint8_t variableIndex, String valueAsText) {
 /* This function is called every time Virtuino app requests to read a pin value*/
 String onRequested(char variableType, uint8_t variableIndex) {
   if (variableType == 'V') {
-    if (variableIndex < V_memory_count) return String(V[variableIndex]); // return the value of the arduino V memory array
+    if (variableIndex < V_MEMORY_SIZE) return String(V[variableIndex]); // return the value of the arduino V memory array
   }
   return "";
 }
@@ -85,7 +88,6 @@ void vDelay(int delayInMillis) {
   long t = millis() + delayInMillis;
   while (millis() < t) virtuinoRun();
 }
-
 //============================================================== funzioni irrigazione
 void accendi_irrigazione() {
   irrigazioneManualeControlloApp = 1;
@@ -143,6 +145,7 @@ void setup() {
     EEPROM.write(EEPROM_END_LOCATION, 1);
     EEPROM.write(EEPROM_STATE_LOCATION, 1);
     EEPROM.write(EEPROM_DELAY_LOCATION, 12);
+    EEPROM.write(EEPROM_ORAMINUTISWITCH_LOCATION, 1);
     EEPROM.commit();
   }
 
@@ -153,6 +156,7 @@ void setup() {
   V[4] = 0; // valore indicatore irrigazione
   V[5] = 0; // valore timer globale
   V[9] = EEPROM.read(EEPROM_DELAY_LOCATION); // valore durata ritardo irrigazione
+  V[10] = EEPROM.read(EEPROM_ORAMINUTISWITCH_LOCATION ); // valore scelta di misura del tempo in ore o minuti
 
   timerGlobale.start(); // inizializzazione timer
   timerGlobale.pause();
@@ -160,13 +164,14 @@ void setup() {
   timerIntervallo.pause();
 } // Close Setup
 
-int ritardo;
-
 void loop() {
   virtuinoRun(); // Necessary function to communicate with Virtuino. Client handler
   V[7] = timerGlobale.read();
 
-  //Serial.println((V[1] * MILLIVAR) - (timerIntervallo.read() % (V[1] * MILLIVAR)));
+  if (V[10]) oreOminuti = MILLIORA;
+  else oreOminuti = MILLIMINUTO;
+
+  //Serial.println((V[1] * oreOminuti) - (timerIntervallo.read() % (V[1] * oreOminuti)));
   // enter your code below. Avoid to use delays on this loop. Instead of the default delay function use the vDelay that is located on the bottom of this code
   // You don't need to add code to read or write to the pins. Just enter the  pinMode of each Pin you want to use on void setup
   //========================================================= Stati e funzioni pulsanti
@@ -194,7 +199,7 @@ void loop() {
     else if (primaIrrigazione && V[9] == 0) sogliaIrrigazione = -1;
     else valoreTempo = V[1];
     //Serial.println(valoreTempo); // DEBUG
-    if (sogliaIrrigazione >= valoreTempo * MILLIVAR || sogliaIrrigazione == -1) // se la soglia di irrigazione raggiunge un valore vicino a quello dell'intervallo settato, parte l'irrigazione
+    if (sogliaIrrigazione >= valoreTempo * oreOminuti || sogliaIrrigazione == -1) // se la soglia di irrigazione raggiunge un valore vicino a quello dell'intervallo settato, parte l'irrigazione
     {
       controlloStato3 = true; // accendi irrigazione
 	  if (primaIrrigazione) primaIrrigazione = 0;
@@ -202,7 +207,7 @@ void loop() {
       timerIntervallo.stop();
       stato = 3;
     }
-    if (timerDurata.read() >= V[2] * MILLIVAR) // fine irrigazione
+    if (timerDurata.read() >= V[2] * oreOminuti) // fine irrigazione
     {
       spegni_irrigazione();
       Serial.println("SPEGNI IRRIGAZIONE (AUTO)");
@@ -211,8 +216,8 @@ void loop() {
       timerGlobale.pause();
       timerIntervallo.start();
     }
-    V[5] = (V[2] * MILLIVAR) - (timerDurata.read() % (V[2] * MILLIVAR));
-    V[6] = (valoreTempo * MILLIVAR) - (timerIntervallo.read() % (valoreTempo * MILLIVAR)); // visualizzatore tempo intervallo
+    V[5] = (V[2] * oreOminuti) - (timerDurata.read() % (V[2] * oreOminuti));
+    V[6] = (valoreTempo * oreOminuti) - (timerIntervallo.read() % (valoreTempo * oreOminuti)); // visualizzatore tempo intervallo
     break;
   case 2:
     ////////////////////////////////////////////////////////////////////// modalità manuale
@@ -266,5 +271,6 @@ void loop() {
   if (EEPROM.read(EEPROM_END_LOCATION) != V[2]) EEPROM.write(EEPROM_END_LOCATION, V[2]);
   if (EEPROM.read(EEPROM_STATE_LOCATION) != V[3]) EEPROM.write(EEPROM_STATE_LOCATION, V[3]);
   if (EEPROM.read(EEPROM_DELAY_LOCATION) != V[9]) EEPROM.write(EEPROM_DELAY_LOCATION, V[9]);
+  if (EEPROM.read(EEPROM_ORAMINUTISWITCH_LOCATION ) != V[10]) EEPROM.write(EEPROM_ORAMINUTISWITCH_LOCATION , V[10]);
   EEPROM.commit();
 } //Close Loop
