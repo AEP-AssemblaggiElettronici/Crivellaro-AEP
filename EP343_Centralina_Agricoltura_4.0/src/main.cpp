@@ -24,6 +24,7 @@ to and enable it
 #define MILLIORA 3600000 // costante di un'ora in millisecondi
 #define MILLIMINUTO 60000 // costante di un minuto in millisecondi
 #define V_MEMORY_SIZE 12 // the size of V memory. You can change it to a number <=255)
+#define IMPULSO 2000 // durata impulso in millisecondi
 
 long V[V_MEMORY_SIZE]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
 boolean debug = 0; // set this variable to false on the finale code to decrease the request time.
@@ -32,10 +33,12 @@ boolean controlloStato3 = 0;
 boolean irrigazioneManualeControlloApp = 0;
 boolean primaIrrigazione = 0; // stato della prima irrigazione, per settare il ritardo
 boolean irrigazioneAuto;
+boolean irrigazioneAutoInAtto = 0;
 unsigned int oreOminuti; // questa variabile prenderà i valori o di MILLIORA o di MILLIMINUTO (V[10])
 byte stato = 1;
 int sogliaIrrigazione = 0;
 int valoreTempo;
+unsigned short int impulsi = 0; // numero di impulsi da inviare quando l'irrigazione automatica è spenta
 
 BluetoothSerial SerialBT;
 VirtuinoCM virtuino;
@@ -93,7 +96,7 @@ void accendi_irrigazione() {
   irrigazioneManualeControlloApp = 1;
   digitalWrite(RELAY_1, 1);
   digitalWrite(RELAY_2, 0);
-  vDelay(1500);
+  vDelay(IMPULSO);
   digitalWrite(RELAY_1, 0);
   digitalWrite(RELAY_2, 0);
 }
@@ -102,7 +105,7 @@ void spegni_irrigazione() {
   irrigazioneManualeControlloApp = 0;
   digitalWrite(RELAY_1, 0);
   digitalWrite(RELAY_2, 1);
-  vDelay(1500);
+  vDelay(IMPULSO);
   digitalWrite(RELAY_1, 0);
   digitalWrite(RELAY_2, 0);
 }
@@ -195,10 +198,20 @@ void loop() {
     timerIntervallo.resume();
     sogliaIrrigazione = timerIntervallo.read();
     if (!digitalRead(PULSANTE23) && stato == 1); // SUCCEDE NIENTE!
+
     if (primaIrrigazione && V[9] != 00) valoreTempo = V[9]; // controllo prima irrigazione programmata
-    else if (primaIrrigazione && V[9] == 0) sogliaIrrigazione = -1;
+    else if (primaIrrigazione && V[9] == 0) sogliaIrrigazione = -1; 
     else valoreTempo = V[1];
-    //Serial.println(valoreTempo); // DEBUG
+
+    if (!irrigazioneAutoInAtto) // controllo ciclico spegnimento irrigazione, ogni 6 secondi manda un impulso di spegnimento per 3 volte
+    {
+      if (timerIntervallo.read() % 6000 == 0 && timerIntervallo.read() != 0 && impulsi < 3) 
+      {
+        spegni_irrigazione();
+        impulsi++;
+      }
+    }
+
     if (sogliaIrrigazione >= valoreTempo * oreOminuti || sogliaIrrigazione == -1) // se la soglia di irrigazione raggiunge un valore vicino a quello dell'intervallo settato, parte l'irrigazione
     {
       controlloStato3 = true; // accendi irrigazione
@@ -207,15 +220,18 @@ void loop() {
       timerIntervallo.stop();
       stato = 3;
     }
-    if (timerDurata.read() >= V[2] * oreOminuti) // fine irrigazione
+
+    if (timerDurata.read() >= V[2] * oreOminuti && irrigazioneAutoInAtto) // fine irrigazione
     {
       spegni_irrigazione();
       Serial.println("SPEGNI IRRIGAZIONE (AUTO)");
+      irrigazioneAutoInAtto = 0;
       timerDurata.start();
       timerDurata.stop();
       timerGlobale.pause();
       timerIntervallo.start();
     }
+
     V[5] = (V[2] * oreOminuti) - (timerDurata.read() % (V[2] * oreOminuti));
     V[6] = (valoreTempo * oreOminuti) - (timerIntervallo.read() % (valoreTempo * oreOminuti)); // visualizzatore tempo intervallo
     break;
@@ -224,13 +240,17 @@ void loop() {
     //Serial.println(stato);
     V[3] = 2; // salviamo il valore della modalità manuale
     primaIrrigazione = true; // resetta il controllo ritardo irrigazione per la modalità automatica
+
     if (irrigazioneAuto)
     {
       spegni_irrigazione();
       timerGlobale.pause();
       irrigazioneAuto = 0;
     }
+
     timers_reset(); // resetta i timer di irrigazione
+    impulsi = 0;
+
     if (!digitalRead(PULSANTE23) && stato == 2 && pulsante23controllo)
     {
       Serial.println("IRRIGAZIONE (MANUALE)");
@@ -239,6 +259,7 @@ void loop() {
       timerGlobale.resume();
       pulsante23controllo = !pulsante23controllo;
     } 
+
     if (digitalRead(PULSANTE23) && stato == 2 && !pulsante23controllo)
     {
       Serial.println("SPEGNI IRRIGAZIONE (MANUALE)");
@@ -253,6 +274,8 @@ void loop() {
     if (!digitalRead(PULSANTE23)); // SUCCEDE NIENTE!
     Serial.println("ACCENDI IRRIGAZIONE (AUTO)");
     accendi_irrigazione();
+    irrigazioneAutoInAtto = 1;
+    impulsi = 0;
     timerGlobale.resume();
     timerDurata.start();
     controlloStato3 = false;
