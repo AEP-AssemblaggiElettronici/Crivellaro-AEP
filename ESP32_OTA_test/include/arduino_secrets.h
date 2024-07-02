@@ -1,2 +1,2 @@
-#define SECRET_SSID "AEP-Guest"
-#define SECRET_KEY "emilianoaep"
+#define SECRET_SSID "your-accesspoint-SSID
+#define SECRET_KEY "your-accesspoint-password"
