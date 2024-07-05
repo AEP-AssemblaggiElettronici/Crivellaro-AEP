@@ -48,7 +48,6 @@ bool alarmSupport = false;
 uint8_t units_ = 0;           // unit digit variable for new ModBus slave ID
 uint8_t tens_ = 0;            // tens digit variable for new ModBus slave ID
 bool editUnits = true;        // toggle variable to edit new ModBus slave ID via buttons
-bool pinAllarme;
 
 /*********************************************************************************************************/
 
@@ -211,7 +210,7 @@ void loop() {
 
   if (commands[0] == 0x00C0 && commands[1] == 0x0050) {  // C050, is the ModBus master's command to update slave ID
     Serial.println(commands[2]);
-    if (commands[2] < 0xE7) {
+    if (commands[2] < 0xE6) {
       EEPROM.update(1, commands[2]);
     } else EEPROM.update(1, 1);
     blinky();
