@@ -34,11 +34,13 @@ boolean irrigazioneManualeControlloApp = 0;
 boolean primaIrrigazione = 0; // stato della prima irrigazione, per settare il ritardo
 boolean irrigazioneAuto;
 boolean irrigazioneAutoInAtto = 0;
+boolean statoLedInterno = 0;
 unsigned int oreOminuti; // questa variabile prenderà i valori o di MILLIORA o di MILLIMINUTO (V[10])
 byte stato = 1;
 int sogliaIrrigazione = 0;
 int valoreTempo;
 unsigned short int impulsi = 0; // numero di impulsi da inviare quando l'irrigazione automatica è spenta
+unsigned int secondiPassati; // variabile usata nel lampeggio del led interno
 
 BluetoothSerial SerialBT;
 VirtuinoCM virtuino;
@@ -169,14 +171,22 @@ void setup() {
 
 void loop() {
   virtuinoRun(); // Necessary function to communicate with Virtuino. Client handler
+  // enter your code below. Avoid to use delays on this loop. Instead of the default delay function use the vDelay that is located on the bottom of this code
+  // You don't need to add code to read or write to the pins. Just enter the  pinMode of each Pin you want to use on void setup
   V[7] = timerGlobale.read();
 
   if (V[10]) oreOminuti = MILLIORA;
   else oreOminuti = MILLIMINUTO;
 
+  // lampeggio led interno
+  if (millis() - secondiPassati > 1000)
+  {
+    statoLedInterno = !statoLedInterno;
+    digitalWrite(LED_1, statoLedInterno);
+    secondiPassati = millis();
+  }
+
   //Serial.println((V[1] * oreOminuti) - (timerIntervallo.read() % (V[1] * oreOminuti)));
-  // enter your code below. Avoid to use delays on this loop. Instead of the default delay function use the vDelay that is located on the bottom of this code
-  // You don't need to add code to read or write to the pins. Just enter the  pinMode of each Pin you want to use on void setup
   //========================================================= Stati e funzioni pulsanti
 
   /* se la durata di irrigazione è maggiore dell'intervallo, 
