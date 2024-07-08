@@ -40,7 +40,6 @@ int sogliaIrrigazione = 0;
 int valoreTempo;
 unsigned short int impulsi = 0; // numero di impulsi da inviare quando l'irrigazione automatica è spenta
 unsigned int secondiPassati; // variabile usata nel lampeggio del led interno
-float voltaggio;
 
 BluetoothSerial SerialBT;
 VirtuinoCM virtuino;
