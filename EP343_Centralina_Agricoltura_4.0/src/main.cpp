@@ -18,7 +18,6 @@ to and enable it
 #define RELAY_1 32
 #define RELAY_2 33
 #define LED_1 5
-#define LED_2 13
 #define PULSANTE23 23
 #define PULSANTE19 19
 #define MILLIORA 3600000 // costante di un'ora in millisecondi
@@ -41,6 +40,7 @@ int sogliaIrrigazione = 0;
 int valoreTempo;
 unsigned short int impulsi = 0; // numero di impulsi da inviare quando l'irrigazione automatica è spenta
 unsigned int secondiPassati; // variabile usata nel lampeggio del led interno
+float voltaggio;
 
 BluetoothSerial SerialBT;
 VirtuinoCM virtuino;
@@ -124,13 +124,11 @@ void timers_reset() {
 void setup() {
 
   pinMode(LED_1, OUTPUT);
-  pinMode(LED_2, OUTPUT);
   pinMode(RELAY_1, OUTPUT);
   pinMode(RELAY_2, OUTPUT);
   pinMode(PULSANTE19, INPUT);
   pinMode(PULSANTE23, INPUT);
   digitalWrite(LED_1, HIGH);
-  digitalWrite(LED_2, HIGH);
   digitalWrite(RELAY_1, LOW);
   digitalWrite(RELAY_2, LOW);
 
