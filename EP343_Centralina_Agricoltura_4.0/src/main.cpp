@@ -22,8 +22,10 @@ to and enable it
 #define PULSANTE19 19
 #define MILLIORA 3600000 // costante di un'ora in millisecondi
 #define MILLIMINUTO 60000 // costante di un minuto in millisecondi
-#define V_MEMORY_SIZE 12 // the size of V memory. You can change it to a number <=255)
+#define V_MEMORY_SIZE 13 // the size of V memory. You can change it to a number <=255)
 #define IMPULSO 2000 // durata impulso in millisecondi
+#define BATTERIA 35 // pin batteria
+#define PANNELLOSOLARE 34 // pin pannello solare
 
 long V[V_MEMORY_SIZE]; // This array is synchronized with Virtuino V memory. You can change the type to int, long etc.
 boolean debug = 0; // set this variable to false on the finale code to decrease the request time.
@@ -127,6 +129,8 @@ void setup() {
   pinMode(RELAY_2, OUTPUT);
   pinMode(PULSANTE19, INPUT);
   pinMode(PULSANTE23, INPUT);
+  pinMode(BATTERIA, INPUT);
+  pinMode(PANNELLOSOLARE, INPUT);
   digitalWrite(LED_1, HIGH);
   digitalWrite(RELAY_1, LOW);
   digitalWrite(RELAY_2, LOW);
@@ -174,6 +178,8 @@ void loop() {
 
   if (V[10]) oreOminuti = MILLIORA;
   else oreOminuti = MILLIMINUTO;
+  V[11] = map(analogRead(BATTERIA), 0, 4095, 0, 100); // prende il valore della carica della batteria
+  V[12] = map(analogRead(PANNELLOSOLARE), 2100, 0, 0, 100); // prende il valore della luminosità corrente dal pannello solare
 
   // lampeggio led interno
   if (millis() - secondiPassati > 1000)
