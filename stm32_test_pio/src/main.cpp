@@ -1,6 +1,6 @@
 #include <stm32f4xx_hal.h>
 
-static TIM_HandleTypeDef istanzaTimer = { .Instance = TIM2 };
+static TIM_HandleTypeDef istanzaTimer = { .Instance = TIM1 };
 
 void initTimer()
 {
@@ -18,7 +18,7 @@ void initLed()
 {
     __GPIOD_CLK_ENABLE();
     GPIO_InitTypeDef GPIO_InitStruttura;
-    GPIO_InitStruttura.Pin = GPIO_PIN_12;
+    GPIO_InitStruttura.Pin = GPIO_PIN_13;
     GPIO_InitStruttura.Mode = GPIO_MODE_OUTPUT_PP;
     GPIO_InitStruttura.Pull = GPIO_NOPULL;
     HAL_GPIO_Init(GPIOD, &GPIO_InitStruttura);
@@ -34,7 +34,7 @@ int main()
     {
         int timer = __HAL_TIM_GET_COUNTER(&istanzaTimer);
         
-        if (timer == 500) HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
-        if (timer == 1000) HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_RESET);
+        if (timer == 500) HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
+        if (timer == 1000) HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_RESET);
     }
 }
