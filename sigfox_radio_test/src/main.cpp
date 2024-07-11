@@ -24,7 +24,7 @@ void setup()
 void loop() 
 {
   //test raccolta info dal dispositivo (id ecc.)
-/*   while (contatore < 1) 
+  while (contatore < 1) 
   {
     digitalWrite(SIGFOX_RESET_PIN, 1);
     radio.begin(9600);
@@ -39,10 +39,10 @@ void loop()
     digitalWrite(SIGFOX_RESET_PIN, 0);
     radio.end();
     contatore++;
-  } */
+  }
 
   // test trasmissione
-  if (millis() % 10000 == 0) {
+/*   if (millis() % 10000 == 0) {
     digitalWrite(SIGFOX_RESET_PIN, 1);
     radio.begin(19200);
     delay(1000);
@@ -52,5 +52,5 @@ void loop()
     digitalWrite(SIGFOX_RESET_PIN, 0);
     radio.end();
     Serial.println("Messaggio inviato " + (String)contatore);
-  }
+  } */
 }
