@@ -1,0 +1,5 @@
+CHANGELOG versione 2.2
+
+- aggiornato il manuale d'uso
+- corretta la visualizzazione dei sensori in allarme tramite comando modbus master
+- aggiunto dalla versione 1 il comando per modificare la sensibilità tramite modbus master
