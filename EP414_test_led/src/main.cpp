@@ -21,11 +21,11 @@ void setup()
 void loop()
 {
   s++;
-  delay(1000);;
+  delay(250);;
   Serial.println(s);
 
   digitalWrite(pins[s], 1);
-  delay(250);
+  delay(1000);
   digitalWrite(pins[s], 0);
   
   if (s > 2) s = -1;
