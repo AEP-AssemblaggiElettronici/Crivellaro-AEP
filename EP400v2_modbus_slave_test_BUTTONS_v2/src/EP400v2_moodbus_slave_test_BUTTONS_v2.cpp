@@ -198,9 +198,9 @@ void loop() {
       alarm = false;
     } else {  // ALARM!
       if (!alarmSupport) {
-        if (Analog_Value[0] > sensitivityValue) discreteInputs[0] = 1;
-        if (Analog_Value[1] > sensitivityValue) discreteInputs[1] = 1;
-        if (Analog_Value[2] > sensitivityValue) discreteInputs[2] = 1;
+        if (Analog_Value[0] < sensitivityValue) discreteInputs[0] = 1;
+        if (Analog_Value[1] < sensitivityValue) discreteInputs[1] = 1;
+        if (Analog_Value[2] < sensitivityValue) discreteInputs[2] = 1;
         alarm = true;
       }
     }
@@ -230,6 +230,17 @@ void loop() {
     delay(1000);
     reboot();
   }
+
+  if (commands[0] == 0x0005 && commands[1] == 0x0005) {  // 0505: the ModBus command to update sensitivity value (0 - 3)
+    wdt_reset();
+    if (commands[2] < 3) {  // if the value is too high, reset sensitivity level to 0
+      EEPROM.update(SENSITIVITY_EEPROM_LOCATION, commands[2]);
+    } else EEPROM.update(SENSITIVITY_EEPROM_LOCATION, 0);
+    blinky();
+    delay(1000);
+    reboot();
+  }
+  wdt_disable();
 
   if (!digitalRead(MODBUS_BUTTON) && !sensitivityEditMode && !alarm) {  // ModBus button: if released shows on leds ModBus Slave ID, if 5-seconds long press enters Slave ID edit mode
     modbusButtonLastStatus = true;
@@ -304,17 +315,17 @@ void loop() {
     if (editUnits) {  // press ModBus button to edit units on the slave ID - 0 to 9 and over
       if (units_ < 10) {
         units_++;
-        digitalWrite(LED_RED, 1);
+        digitalWrite(LED_GREEN, 1);
         delay(100);
-        digitalWrite(LED_RED, 0);
+        digitalWrite(LED_GREEN, 0);
         delay(100);
       } else units_ = 0;
     } else {
       if (tens_ <= 22) {  // press ModBus button to edit tens on the slave ID - 0 to 22 and over
         tens_++;
-        digitalWrite(LED_GREEN, 1);
+        digitalWrite(LED_RED, 1);
         delay(100);
-        digitalWrite(LED_GREEN, 0);
+        digitalWrite(LED_RED, 0);
         delay(100);
       } else tens_ = 0;
     }
@@ -326,8 +337,7 @@ void loop() {
   if (!digitalRead(SENSITIVITY_BUTTON) && modbusEditMode && !alarm) {  // on slave ID edit mode, toggles between tens and unit edit
   timerReboot.stop();
     shortBlinky();
-    if (editUnits) editUnits = false;
-    else editUnits = true;
+    editUnits = !editUnits;
     timerReboot.start();
   }
 
