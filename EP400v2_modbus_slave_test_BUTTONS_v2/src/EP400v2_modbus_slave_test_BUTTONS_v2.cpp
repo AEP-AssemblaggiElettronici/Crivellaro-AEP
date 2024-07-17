@@ -51,7 +51,7 @@ bool editUnits = true;        // toggle variable to edit new ModBus slave ID via
 
 /*********************************************************************************************************/
 
-void (*reboot)(void) = 0;  // reset function, at address 0, calling it will make the board reboot
+void (*reboot)() = 0;  // reset function, at address 0, calling it will make the board reboot
 
 void firstBoot() {  // first boot function, to reset memory location in which is stored the slave ID
   if (EEPROM[64] != 64) {
@@ -184,11 +184,11 @@ void loop() {
 
     if (Analog_Value[0] > sensitivityValue && Analog_Value[1] > sensitivityValue && Analog_Value[2] > sensitivityValue) {  // everything OK
       digitalWrite(LED_GREEN, 1);
-      delay(70);
+      delay(30);
       digitalWrite(LED_GREEN, 0);
-      delay(70);
+      delay(30);
       digitalWrite(LED_GREEN, 1);
-      delay(150);
+      delay(30);
       digitalWrite(LED_GREEN, 0);
       //Serial.println(sensitivityValue);
       discreteInputs[0] = 0;
@@ -198,9 +198,9 @@ void loop() {
       alarm = false;
     } else {  // ALARM!
       if (!alarmSupport) {
-        if (Analog_Value[0] < sensitivityValue) discreteInputs[0] = 1;
+        if (Analog_Value[0] < sensitivityValue) discreteInputs[2] = 1;
         if (Analog_Value[1] < sensitivityValue) discreteInputs[1] = 1;
-        if (Analog_Value[2] < sensitivityValue) discreteInputs[2] = 1;
+        if (Analog_Value[2] < sensitivityValue) discreteInputs[0] = 1;
         alarm = true;
       }
     }
@@ -313,21 +313,19 @@ void loop() {
   if (!digitalRead(MODBUS_BUTTON) && modbusEditMode && !alarm) {  // EEPROM update
     timerReboot.stop();
     if (editUnits) {  // press ModBus button to edit units on the slave ID - 0 to 9 and over
-      if (units_ < 10) {
-        units_++;
-        digitalWrite(LED_GREEN, 1);
-        delay(100);
-        digitalWrite(LED_GREEN, 0);
-        delay(100);
-      } else units_ = 0;
+      if (units_ < 9) units_++;
+      else units_ = 0; 
+      digitalWrite(LED_GREEN, 1);
+      delay(100);
+      digitalWrite(LED_GREEN, 0);
+      delay(100);
     } else {
-      if (tens_ <= 22) {  // press ModBus button to edit tens on the slave ID - 0 to 22 and over
-        tens_++;
-        digitalWrite(LED_RED, 1);
-        delay(100);
-        digitalWrite(LED_RED, 0);
-        delay(100);
-      } else tens_ = 0;
+      if (tens_ < 22) tens_++;  // press ModBus button to edit tens on the slave ID - 0 to 22 and over
+      else tens_ = 0; 
+      digitalWrite(LED_RED, 1);
+      delay(100);
+      digitalWrite(LED_RED, 0);
+      delay(100);
     }
     slaveID = (tens_ * 10) + units_;
     delay(100);
@@ -344,7 +342,7 @@ void loop() {
   /* if Slave ID edit mode is idle for 10 seconds, board reboots
   if Slave ID is unchanged, value will be reseto to 1 */
   if (modbusEditMode && timerReboot.read() > 10000) {
-    if (slaveID == 0) EEPROM.update(1, 1);
+    if (slaveID == 0 || slaveID == EEPROM.read(MODBUS_SLAVE_ID_EEPROM_LOCATION)) EEPROM.update(1, 1);
     else EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, slaveID);
     blinky();
     reboot();
