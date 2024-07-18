@@ -4,3 +4,5 @@
 .metadata/
 
 NUCLEO-F401RE_test/
+
+centralina_delay/include/secret.h
