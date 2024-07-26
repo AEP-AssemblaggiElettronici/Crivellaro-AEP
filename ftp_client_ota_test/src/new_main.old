@@ -1,0 +1,78 @@
+#include <WiFi.h>
+#include <FTPduino.h>
+#include <Update.h>
+#include <SPIFFS.h>
+
+uint8_t *ftpOperation()
+{
+    FTPduino ftp;
+    Serial.println("Connecting to FTP server");
+    if (!ftp.connect("192.168.8.156", 2121))
+    {
+        Serial.println("Connection failed");
+        while (true)
+            ;
+    }
+    Serial.println("Connection successful");
+
+    // Authenticate with FTP server
+    if (!ftp.authenticate("ftp", "ftp"))
+    {
+        Serial.println("Authentication failed");
+        while (true)
+            ;
+    }
+
+    ftp.setWorkDirectory("/");
+    uint8_t *buffer;
+    size_t size = ftp.getFileSize("pompapozzo.bin");
+    Serial.println("Downloading..");
+    if (ftp.downloadFile("pompapozzo.bin", buffer, size))
+    {
+        Serial.println("Downloaded");
+        ftp.disconnect();
+        return buffer;
+    }
+    return 0;
+}
+
+void setup()
+{
+    Serial.begin(9600);
+
+    WiFi.begin("HOTSPOT_TEST", "hotspot_test");
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        Serial.print(".");
+        delay(250);
+    }
+    Serial.print("WiFi connessa, IP: ");
+    Serial.print(WiFi.localIP());
+    Serial.println();
+}
+
+void loop()
+{
+    // Serial.println("NUOVA VERSIONE!");
+    if (Serial.read() == 'u')
+    {
+        ftpOperation();
+    }
+
+    /* Serial.println("Versione recente scaricata, inizio dell'aggiornamento firmware");
+        if (!Update.begin()) {
+          Serial.println("Errore all'inizio dell'upload nuova versione");
+          return;
+        }
+        Update.write(buffer, size);  // !!UPDATE!!
+        if (Update.isRunning())
+          ;
+        if (Update.end()) {
+          Serial.println("Fine dell'udpate, riavvio");
+          delay(3000);
+          ESP.restart();
+        } else {
+          Serial.println("Upload fallito alla fine");
+          return;
+        } */
+}
