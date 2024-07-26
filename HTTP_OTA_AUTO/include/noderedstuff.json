@@ -1,0 +1,60 @@
+[
+    {
+        "id": "1e61c1ad97dc6117",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "b26254760cf07a3d",
+        "type": "file in",
+        "z": "1e61c1ad97dc6117",
+        "name": "",
+        "filename": "/home/micioide/Scrivania/pompapozzo.bin",
+        "filenameType": "str",
+        "format": "",
+        "chunk": false,
+        "sendError": false,
+        "encoding": "none",
+        "allProps": false,
+        "x": 740,
+        "y": 400,
+        "wires": [
+            [
+                "be06f9edfc4de19f"
+            ]
+        ]
+    },
+    {
+        "id": "be06f9edfc4de19f",
+        "type": "http response",
+        "z": "1e61c1ad97dc6117",
+        "name": "",
+        "statusCode": "200",
+        "headers": {
+            "version": "0.4"
+        },
+        "x": 1020,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "c3dd031cf6c1848d",
+        "type": "http in",
+        "z": "1e61c1ad97dc6117",
+        "name": "",
+        "url": "/version",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 470,
+        "y": 360,
+        "wires": [
+            [
+                "b26254760cf07a3d"
+            ]
+        ]
+    }
+]
