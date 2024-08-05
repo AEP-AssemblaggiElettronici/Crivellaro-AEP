@@ -10,7 +10,6 @@
 
 const byte umiditaTemperatura[] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x03, 0x05, 0xCB};
 EspSoftwareSerial::UART forkett;
-byte valori[11];
 
 float prendiDati(bool);
 
@@ -29,16 +28,15 @@ void setup()
 
 void loop()
 {
-  memset(valori, 0, sizeof(valori));
   delay(250);
   Serial.printf("Umidità: %.2f\n", prendiDati(0));
   delay(1000);
   Serial.printf("Temperatura: %.2f\n", prendiDati(1));
 }
 
-float prendiDati(bool hum0Temp1)
+float prendiDati(bool hum0temp1)
 {
-  float result;
+  byte valori[11];
   digitalWrite(TX_ENABLE, 1);
   delay(50);
   if (forkett.write(umiditaTemperatura, sizeof(umiditaTemperatura)) == 8)
@@ -50,9 +48,7 @@ float prendiDati(bool hum0Temp1)
       valori[i] = forkett.read();
       // Serial.println(valori[i], HEX);
     }
-    if (hum0Temp1)
-      return (((valori[5] * 256.0) + valori[6]) / 10); // converting hexadecimal to decimal
-
-    return (((valori[3] * 256.0) + valori[4]) / 10); // converting hexadecimal to decimal
+    unsigned short int bytes[2] = {hum0temp1 ? valori[5] : valori[3], hum0temp1 ? valori[6] : valori[4]};
+    return (((bytes[0] * 256.0) + bytes[1]) / 10); // converting hexadecimal to decimal
   }
 }
