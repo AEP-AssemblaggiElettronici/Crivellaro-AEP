@@ -9,6 +9,8 @@
 #include "Wire.h"
 #include "clsPCA9555.h"
 
+#define LEDPIN 9
+
 PCA9555 ioport(0x20);
 
 uint8_t detect[6] = { 0, 0, 0, 0, 0, 0 }; // stati dei vari relè: (0: spento, 1: on, 2: attesa dopo on: 3: off)
@@ -17,6 +19,8 @@ void setup()
 {
   ioport.begin();
   ioport.setClock(400000);
+
+  pinMode(LEDPIN, OUTPUT);
 
   for (uint8_t i = 0; i < 6; i++) ioport.pinMode(i, OUTPUT); // definizione degli output
   for (uint8_t i = 8; i <= 15; i++)  ioport.pinMode(i, INPUT); // definizione degli input dei switch
@@ -27,6 +31,10 @@ void setup()
 void loop()
 {
   bool interlock = !ioport.digitalRead(14) && !ioport.digitalRead(8) && !ioport.digitalRead(9);
+
+  // blink che denota il corretto funzionamento della scheda:
+  if (millis() % 1000 < 500) digitalWrite(LEDPIN, 1);
+  else digitalWrite(LEDPIN, 0);
 
   for (int i = 2; i <= 7; i++)
   {
