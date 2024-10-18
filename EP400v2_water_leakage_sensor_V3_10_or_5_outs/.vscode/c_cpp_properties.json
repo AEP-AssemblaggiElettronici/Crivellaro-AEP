@@ -8,12 +8,12 @@
         {
             "name": "PlatformIO",
             "includePath": [
-                "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_outs/include",
-                "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_outs/src",
+                "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_or_5_outs/include",
+                "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_or_5_outs/src",
                 "/home/micioide/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
-                "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_outs/lib/Timer",
+                "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_or_5_outs/lib/Timer",
                 "/home/micioide/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
-                "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_outs/.pio/libdeps/uno/ModbusRTUSlave/src",
+                "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_or_5_outs/.pio/libdeps/uno/ModbusRTUSlave/src",
                 "/home/micioide/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
                 "/home/micioide/.platformio/packages/framework-arduino-avr/cores/arduino",
                 "/home/micioide/.platformio/packages/framework-arduino-avr/variants/standard",
@@ -24,12 +24,12 @@
             "browse": {
                 "limitSymbolsToIncludedHeaders": true,
                 "path": [
-                    "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_outs/include",
-                    "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_outs/src",
+                    "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_or_5_outs/include",
+                    "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_or_5_outs/src",
                     "/home/micioide/.platformio/packages/framework-arduino-avr/libraries/Wire/src",
-                    "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_outs/lib/Timer",
+                    "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_or_5_outs/lib/Timer",
                     "/home/micioide/.platformio/packages/framework-arduino-avr/libraries/EEPROM/src",
-                    "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_outs/.pio/libdeps/uno/ModbusRTUSlave/src",
+                    "/home/micioide/Crivellaro-AEP/EP400v2_water_leakage_sensor_V3_10_or_5_outs/.pio/libdeps/uno/ModbusRTUSlave/src",
                     "/home/micioide/.platformio/packages/framework-arduino-avr/libraries/SoftwareSerial/src",
                     "/home/micioide/.platformio/packages/framework-arduino-avr/cores/arduino",
                     "/home/micioide/.platformio/packages/framework-arduino-avr/variants/standard",
