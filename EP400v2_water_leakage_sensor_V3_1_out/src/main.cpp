@@ -8,18 +8,21 @@
 #define DRIVER_ENABLE_PIN 2               // on the EP400v2 that's the control pin
 #define RXPIN 10                          // ModBus receiver pin
 #define TXPIN 11                          // ModBuse transmission pin
-#define LED_RED 13                         // EP400v2's onboard red led
-#define LED_GREEN 9                      // EP400v2's onboard green led
-#define MODBUS_BUTTON 5                   // EP400v2's ModBus function button pin
-#define SENSITIVITY_BUTTON 4              // EP400v2's Sensitivity button pin
-#define PERIPHEAL_POWER 8                 // EP400v2's peripheal power
+#define LED_RED 13                        // EP400v2's onboard red led
+#define LED_GREEN 17                      // EP400v2's onboard green led
+#define MODBUS_BUTTON 8                   // EP400v2's ModBus function button pin
+#define SENSITIVITY_BUTTON 9              // EP400v2's Sensitivity button pin
+// #define PERIPHEAL_POWER 8                 // EP400v2's peripheal power
 #define MODBUS_SLAVE_ID_EEPROM_LOCATION 1 // ModBus Slave ID EEPROM memory location
 #define SENSITIVITY_EEPROM_LOCATION 2     // Sensitivity parameter EEPROM location
 #define ANALOG_IN1 A0                     // analog inputs for sensors
 #define ANALOG_IN2 A1
 #define ANALOG_IN3 A2
 #define ALARM_PIN 7
-const uint8_t inputs[3] = {2, 3, 4}; // defining inputs pins !!!CHIEDERE SE SU QUESTA SCHEDA SONO CAMBIATI!!!
+#define ALARM_LED_1 3
+#define ALARM_LED_2 4
+#define ALARM_LED_3 5
+const uint8_t inputs[3] = {2, 3, 4}; // defining inputs pins
 
 SoftwareSerial mySerial(RXPIN, TXPIN);              // defining SoftwareSerial communication
 ModbusRTUSlave modbus(mySerial, DRIVER_ENABLE_PIN); // defining modbus rtu slave
@@ -66,13 +69,13 @@ void blinky()
 { // led blink function
     for (int i = 0; i < 20; i++)
     {
-        digitalWrite(LED_RED, HIGH);
+        digitalWrite(LED_RED, 0);
         delay(25);
-        digitalWrite(LED_RED, LOW);
+        digitalWrite(LED_RED, 1);
         delay(25);
-        digitalWrite(LED_GREEN, HIGH);
+        digitalWrite(LED_GREEN, 0);
         delay(25);
-        digitalWrite(LED_GREEN, LOW);
+        digitalWrite(LED_GREEN, 1);
         delay(25);
     }
 }
@@ -81,19 +84,19 @@ void shortBlinky()
 { // short led blink function
     for (int i = 0; i < 10; i++)
     {
-        digitalWrite(LED_RED, HIGH);
+        digitalWrite(LED_RED, 0);
         delay(12);
-        digitalWrite(LED_RED, LOW);
+        digitalWrite(LED_RED, 1);
         delay(12);
-        digitalWrite(LED_GREEN, HIGH);
+        digitalWrite(LED_GREEN, 0);
         delay(12);
-        digitalWrite(LED_GREEN, LOW);
+        digitalWrite(LED_GREEN, 1);
         delay(12);
     }
 }
 
 void analog_average(int ch, int AN_ch)
-{ // Lettura canali analogici
+{ // Reading analog sensors'
     Analog_Value[ch] = analogRead(AN_ch);
     delayMicroseconds(1000);
     Analog_Value[ch] = analogRead(AN_ch);
@@ -111,17 +114,17 @@ void analog_average(int ch, int AN_ch)
 
 void blinky_show()
 { // small blink before showing on leds Modbus ID or sensitivity values
-    digitalWrite(LED_RED, 1);
-    delay(10);
     digitalWrite(LED_RED, 0);
     delay(10);
-    digitalWrite(LED_GREEN, 1);
+    digitalWrite(LED_RED, 1);
     delay(10);
     digitalWrite(LED_GREEN, 0);
     delay(10);
-    digitalWrite(LED_RED, 1);
+    digitalWrite(LED_GREEN, 1);
     delay(10);
     digitalWrite(LED_RED, 0);
+    delay(10);
+    digitalWrite(LED_RED, 1);
     delay(10);
 }
 
@@ -130,21 +133,21 @@ void show_sensitivity()
     switch (sensitivityValueIndex)
     {
     case 0:
-        digitalWrite(LED_RED, 1);
-        delay(1000);
         digitalWrite(LED_RED, 0);
+        delay(1000);
+        digitalWrite(LED_RED, 1);
         break;
     case 1:
-        digitalWrite(LED_GREEN, 1);
-        delay(1000);
         digitalWrite(LED_GREEN, 0);
+        delay(1000);
+        digitalWrite(LED_GREEN, 1);
         break;
     case 2:
-        digitalWrite(LED_RED, 1);
-        digitalWrite(LED_GREEN, 1);
-        delay(1000);
         digitalWrite(LED_RED, 0);
         digitalWrite(LED_GREEN, 0);
+        delay(1000);
+        digitalWrite(LED_RED, 1);
+        digitalWrite(LED_GREEN, 1);
         break;
     }
 }
@@ -157,18 +160,19 @@ void check_inputs_state()
     delay(5);
     analog_average(2, ANALOG_IN3);
     delay(5);
+
     if (Analog_Value[0] < sensitivityValue)
-        discreteInputs[2] = 1;
+        discreteInputs[0] = 1;
     else
-        discreteInputs[2] = 0;
+        discreteInputs[0] = 0;
     if (Analog_Value[1] < sensitivityValue)
         discreteInputs[1] = 1;
     else
         discreteInputs[1] = 0;
     if (Analog_Value[2] < sensitivityValue)
-        discreteInputs[0] = 1;
+        discreteInputs[2] = 1;
     else
-        discreteInputs[0] = 0;
+        discreteInputs[2] = 0;
     modbus.poll();
 }
 
@@ -176,7 +180,6 @@ void check_inputs_state()
 
 void setup()
 {
-    // Serial.begin(9600); // uncomment it and place serial printlines where needed for debug purpose
     firstBoot();
 
     slaveID = EEPROM.read(MODBUS_SLAVE_ID_EEPROM_LOCATION);
@@ -192,6 +195,9 @@ void setup()
     pinMode(MODBUS_BUTTON, INPUT);
     pinMode(SENSITIVITY_BUTTON, INPUT);
     pinMode(ALARM_PIN, OUTPUT);
+    pinMode(ALARM_LED_1, OUTPUT);
+    pinMode(ALARM_LED_2, OUTPUT);
+    pinMode(ALARM_LED_3, OUTPUT);
 
     modbus.configureDiscreteInputs(discreteInputs, 3); // bool array of discrete inputs values, number of discrete inputs
     modbus.configureHoldingRegisters(commands, 3);     // first two numbers are used for commands, third is the parameter
@@ -200,39 +206,69 @@ void setup()
     timerModbus.start(); // starting hold buttons timer
     timerSensitivity.start();
     sensorsTimer.start();             // starting sensors timer
-    digitalWrite(PERIPHEAL_POWER, 1); // peripheal power
+    // digitalWrite(PERIPHEAL_POWER, 1); // peripheal power
 
     delay(100);
 }
 
 void loop()
 {
-    // sensors gathering data
-    check_inputs_state();
+    // sensors gathering data (every 4 seconds)
+    if (sensorsTimer.read() % sensorsInterval < 500)
+        check_inputs_state();
 
-    // every 4 seconds, sensors are evalutated:
-    if (sensorsTimer.read() % sensorsInterval < 100)
+    // Hypothetical alarm led blink (blinks only if sensors are triggered):
+    if (millis() % 500 < 250)
     {
-        if (
-            Analog_Value[0] > sensitivityValue &&
-            Analog_Value[1] > sensitivityValue &&
-            Analog_Value[2] > sensitivityValue)
-        { // everything OK
-            digitalWrite(ALARM_PIN, 1);
-            digitalWrite(LED_GREEN, 1);
-            delay(30);
-            digitalWrite(LED_GREEN, 0);
-            delay(30);
-            digitalWrite(LED_GREEN, 1);
-            delay(30);
-            digitalWrite(LED_GREEN, 0);
+        if (discreteInputs[0])
+            digitalWrite(ALARM_LED_1, 0);
+        else
+            digitalWrite(ALARM_LED_1, 1);
+        if (discreteInputs[1])
+            digitalWrite(ALARM_LED_2, 0);
+        else
+            digitalWrite(ALARM_LED_2, 1);
+        if (discreteInputs[2])
+            digitalWrite(ALARM_LED_3, 0);
+        else
+            digitalWrite(ALARM_LED_3, 1);
+        if (alarm)
+            digitalWrite(LED_RED, 0);
+    }
+    else
+    {
+        digitalWrite(ALARM_LED_1, 1);
+        digitalWrite(ALARM_LED_2, 1);
+        digitalWrite(ALARM_LED_3, 1);
+        digitalWrite(LED_RED, 1);
+    }
 
-            alarmSupport = false;
-            alarm = false;
+    // sensors are evalutated:
+    if (
+        Analog_Value[0] > sensitivityValue &&
+        Analog_Value[1] > sensitivityValue &&
+        Analog_Value[2] > sensitivityValue)
+    { // everything OK
+        alarm = false;
+        digitalWrite(ALARM_PIN, 0);
+        digitalWrite(LED_RED, 1);
+        if (millis() % 4000 < 300 &&
+            (!modbusEditMode && !sensitivityEditMode))
+        {
+            digitalWrite(LED_GREEN, 0);
+            delay(10);
+            digitalWrite(LED_GREEN, 1);
+            delay(100);
+            digitalWrite(LED_GREEN, 0);
         }
-        else // ALARM!
-            if (!alarmSupport)
-                alarm = true;
+        else
+            digitalWrite(LED_GREEN, 1);
+    }
+    else // ALARM!
+    {
+        alarm = true;
+        digitalWrite(ALARM_PIN, 1);
+        digitalWrite(LED_GREEN, 1);
     }
 
     //***************************************************MODUBS COMMANDS: ***************************************************************************/
@@ -321,11 +357,11 @@ void loop()
             {
                 for (int i = 0; i < hundreds - ascii; i++)
                 {
-                    digitalWrite(LED_RED, 1);
-                    digitalWrite(LED_GREEN, 1);
-                    delay(500);
                     digitalWrite(LED_RED, 0);
                     digitalWrite(LED_GREEN, 0);
+                    delay(500);
+                    digitalWrite(LED_RED, 1);
+                    digitalWrite(LED_GREEN, 1);
                     delay(500);
                 }
             }
@@ -333,9 +369,9 @@ void loop()
             {
                 for (int i = 0; i < tens - ascii; i++)
                 {
-                    digitalWrite(LED_RED, 1);
-                    delay(500);
                     digitalWrite(LED_RED, 0);
+                    delay(500);
+                    digitalWrite(LED_RED, 1);
                     delay(500);
                 }
             }
@@ -343,9 +379,9 @@ void loop()
             {
                 for (int i = 0; i < units - ascii; i++)
                 {
-                    digitalWrite(LED_GREEN, 1);
-                    delay(500);
                     digitalWrite(LED_GREEN, 0);
+                    delay(500);
+                    digitalWrite(LED_GREEN, 1);
                     delay(500);
                 }
             }
@@ -376,9 +412,9 @@ void loop()
                 units_++;
             else
                 units_ = 0;
-            digitalWrite(LED_GREEN, 1);
-            delay(100);
             digitalWrite(LED_GREEN, 0);
+            delay(100);
+            digitalWrite(LED_GREEN, 1);
             delay(100);
         }
         else
@@ -387,9 +423,9 @@ void loop()
                 tens_++; // press ModBus button to edit tens on the slave ID - 0 to 22 and over
             else
                 tens_ = 0;
-            digitalWrite(LED_RED, 1);
-            delay(100);
             digitalWrite(LED_RED, 0);
+            delay(100);
+            digitalWrite(LED_RED, 1);
             delay(100);
         }
         slaveID = (tens_ * 10) + units_;
@@ -467,23 +503,5 @@ void loop()
         EEPROM.update(SENSITIVITY_EEPROM_LOCATION, sensitivityValueIndex);
         blinky();
         reboot();
-    }
-
-    if (alarm)
-    { // ALARM led blink
-        //check_inputs_state();
-        digitalWrite(ALARM_PIN, 0);
-        digitalWrite(LED_RED, 1);
-        delay(100);
-        digitalWrite(LED_RED, 0);
-        delay(100);
-
-        if (!digitalRead(MODBUS_BUTTON) || !digitalRead(SENSITIVITY_BUTTON))
-        { // ALARM led disable
-            alarm = false;
-            alarmSupport = true;
-            digitalWrite(LED_RED, 0);
-            delay(300);
-        }
     }
 }

@@ -429,7 +429,7 @@ void loop()
     }
 
     if (commands[0] == 0x06 && commands[1] == 0x66)
-        reboot(); // reset via modbus
+        reboot(); // 0666: reset via modbus
 
     if (commands[0] == 0x33 && commands[1] == 0x33)
     { // 3333: the ModBus command to update 10 inputs or 5 inputs mode ('0' for 10, '1' for 5)
