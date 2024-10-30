@@ -173,7 +173,6 @@ void check_inputs_state()
         discreteInputs[2] = 1;
     else
         discreteInputs[2] = 0;
-    modbus.poll();
 }
 
 /*********************************************************************************************************/
@@ -250,7 +249,7 @@ void loop()
         Analog_Value[2] > sensitivityValue)
     { // everything OK
         alarm = false;
-        digitalWrite(ALARM_PIN, 0);
+        digitalWrite(ALARM_PIN, 1);
         digitalWrite(LED_RED, 1);
         if (millis() % 4000 < 300 &&
             (!modbusEditMode && !sensitivityEditMode))
@@ -267,9 +266,11 @@ void loop()
     else // ALARM!
     {
         alarm = true;
-        digitalWrite(ALARM_PIN, 1);
+        digitalWrite(ALARM_PIN, 0);
         digitalWrite(LED_GREEN, 1);
     }
+
+    modbus.poll();
 
     //***************************************************MODUBS COMMANDS: ***************************************************************************/
 

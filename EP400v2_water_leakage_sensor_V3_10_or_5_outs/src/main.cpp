@@ -31,7 +31,7 @@ SoftwareSerial mySerial(RXPIN, TXPIN);              // defining SoftwareSerial c
 ModbusRTUSlave modbus(mySerial, DRIVER_ENABLE_PIN); // defining modbus rtu slave
 Timer timerModbus;                                  // timer for Slave ID edit mode
 Timer timerSensitivity;
-Timer timerReboot; // timer for Slave ID edit mode reboot
+Timer timerReboot;  // timer for Slave ID edit mode reboot
 Timer sensorsTimer; // timer for analog sensors
 
 /* defining ModBus inputs, registers.. */
@@ -47,7 +47,7 @@ bool sensitivityEditMode = false;         // sensitivity mode control variable
 bool sensitivityButtonLastStatus;         // control variable for sensitivity button release
 int Analog_Value[3] = {1024, 1024, 1024}; // analog values for sensors
 int sensitivityConsts[3] = {350, 500, 650};
-int sensorsInterval = 4000;               // time interval for sensors (mss)
+int sensorsInterval = 4000; // time interval for sensors (mss)
 bool alarm = false;
 uint8_t units_ = 0;    // unit digit variable for new ModBus slave ID
 uint8_t tens_ = 0;     // tens digit variable for new ModBus slave ID
@@ -218,7 +218,6 @@ void check_inputs_state()
 
         binComm++;
     }
-    modbus.poll();
 }
 
 /*********************************************************************************************************/
@@ -382,6 +381,8 @@ void loop()
         digitalWrite(ALARM_PIN, 0);
         digitalWrite(LED_GREEN, 1);
     }
+
+    modbus.poll();
 
     //***************************************************MODUBS COMMANDS: ***************************************************************************/
 
