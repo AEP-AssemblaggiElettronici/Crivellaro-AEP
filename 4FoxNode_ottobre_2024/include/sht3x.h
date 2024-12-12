@@ -1,0 +1,1 @@
+unsigned short int *sht3x(int);

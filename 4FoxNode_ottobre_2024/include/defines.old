@@ -1,0 +1,32 @@
+/* alimetazione sensori */
+#define BOOST_EN 3     // alimentazione sulle porte D e C
+#define BOOST_SHTDWN 9 // 12v per alimentazione sensoristica analogica (porte D e C)
+#define IO_ENABLE A0   // alimentazione sulle porte A e B
+#define BAUD 9600
+#define POWER_SENS_A 12 // pin used for powering sensor connected
+#define POWER_SENS_B 10
+#define POWER_SENS_C 9
+#define POWER_SENS_D 8
+#define LUXMETRO1 0x23 // indirizzi del luxmetro (porte A e B)
+#define LUXMETRO2 0x5C
+#define DOUT_C 7 // per sensori di peso (porte D e C)
+#define SLK_C A1
+#define DOUT_D 4
+#define SLK_D A2
+
+/* analog input */
+#define AI_D A2
+#define AI_C A1
+
+/* digial input */
+#define PORT_A 10
+#define PORT_B 12
+
+/* sigfox & lora */
+#define rxPin 6
+#define txPin 7 // forse è il 13
+#define SFOX_RST 2
+#define SERIAL_SIGFOX 9600
+#define SERIAL_LORA 1200
+
+#define BUZZER 5
