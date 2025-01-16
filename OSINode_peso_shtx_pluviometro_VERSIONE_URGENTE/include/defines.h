@@ -1,4 +1,4 @@
-#define DEBUG 0 // MODALITA DEBUG (1 attiva, 0 disattivata)
+#define DEBUG 1 // MODALITA DEBUG (1 attiva, 0 disattivata)
 
 /*
     con il pin 3 per la porta D e C dobbiamo discriminare la presenza della forchetta analogica o la bilancia
@@ -37,7 +37,10 @@
 #define BOOST_SHTDWN 9 // 12v per alimentazione sensoristica analogica (porte D e C)
 #define IO_ENABLE A0   // alimentazione sulle porte A e B
 
-#define SCALA_PESO 2.2123
+#define SCALA_PESO 0.5629 // 2.8089887640449 //2.2123
 
 #define TEMPO_LORA 180000   // 3 minuti (per CARNEMOLLA)
 #define TEMPO_SIGFOX 900000 // 15 minuti
+
+#define COSTANTE_C 250 // costanti di peso
+#define COSTANTE_D 250

@@ -11,17 +11,8 @@ long int misura_peso(int pin, int clock)
     pinMode(pin, INPUT);    // pin dout
     pinMode(clock, OUTPUT); // pin slk
 
-    wdt_reset();
-    delay(1000);
-    if (digitalRead(pin))
-    {
-#if DEBUG
-        Serial.print("Sensore di peso non presente su pin ");
-        Serial.print(pin);
-        Serial.println();
-#endif
-        return -1;
-    }
+     while (digitalRead(pin))
+         ; // aspetta che il pin sia su
 
     for (int i = 3; i--;) // raccoglie i bit per il valore di peso grezzo
     {
@@ -42,52 +33,62 @@ long int misura_peso(int pin, int clock)
 
     rawData = ((long)data[2] << 8) | (long)data[1]; // tira fuori il risultato, tronca il bit meno significativo
 
+    // Converti in valore signed
+    if (rawData & 0x800000)
+        rawData |= 0xFF000000; // Valori negativi
+
     return rawData;
 }
 
-long int pesa(int pin, int clk, long offset)
+unsigned long int pesa(int pin, int clk, unsigned long offset)
 {
     unsigned long misurazioni[10];
+    unsigned long mediaGrezza = 0;
+    unsigned long somma = 0;
+    unsigned long differenza = 0;
+    unsigned long deviazione = 0;
+    unsigned char datiValidi = 0;
     unsigned long rawData = 0;
 
     for (int i = 0; i < 10; i++)
     {
-        wdt_reset();
         misurazioni[i] = misura_peso(pin, clk);
-        delay(200);
-        if (misurazioni[i] == -1) // se non ? presente il sensore di peso, ferma la lettura della media
-            return 0;
+        delay(100);
     }
 
-    for (int i = 0; i < 10; i++) // ordina descrescente i valori letti
+    for (int i = 0; i < 10; i++)
+        mediaGrezza += misurazioni[i];
+
+    mediaGrezza /= 10;
+
+    // scarto quadratico medio:
+    for (int i = 0; i < 10; i++)
     {
-        for (int j = 0; j < 10 - i - 1; j++)
+        differenza = misurazioni[i] > mediaGrezza ? misurazioni[i] - mediaGrezza : mediaGrezza - misurazioni[i];
+        somma += differenza * differenza;
+    }
+    deviazione = sqrt(somma / 10);
+
+    // filtro i valori:
+    somma = 0;
+    for (int i = 0; i < 10; i++)
+    {
+        if (abs(misurazioni[i] - mediaGrezza) <= 2 * deviazione)
         {
-            unsigned long temp;
-            if (misurazioni[i] > misurazioni[j])
-            {
-                temp = misurazioni[i];
-                misurazioni[i] = misurazioni[j];
-                misurazioni[j] = temp;
-            }
+            somma += misurazioni[i];
+            datiValidi++;
         }
     }
 
-    for (int i = 1; i < 9; i++)
-        rawData += misurazioni[i];
-
-    rawData /= 8;
+    rawData = datiValidi > 0 ? somma / datiValidi : 0;
 
 #if DEBUG
     Serial.print("Peso (byte): ");
     Serial.print(rawData, HEX);
     Serial.println();
-    if (offset)
-    {
-        Serial.print("Peso taratura (byte): ");
-        Serial.print(offset, HEX);
-        Serial.println();
-    }
+    Serial.print("Peso taratura (byte): ");
+    Serial.print(offset, HEX);
+    Serial.println();
     Serial.print("Peso netto (byte): ");
     Serial.print(rawData - offset < 0 ? 0 : rawData - offset, HEX);
     Serial.println();
@@ -99,21 +100,20 @@ long int pesa(int pin, int clk, long offset)
     if (offset)
     {
         rawData -= offset;
-        if (rawData <= 0)
+        if (rawData < 0)
             return 0;
-        else
-            return rawData;
-    }
-    else
         return rawData;
+    }
+
+    return rawData;
 }
 
 long converti_peso(long peso)
 {
 #if DEBUG
     Serial.print("Peso in grammi: ");
-    Serial.print(peso <= 0 ? 0 : peso * SCALA_PESO) * 2;
+    Serial.print(peso < 0 ? 0 : peso * SCALA_PESO) * 2;
     Serial.println();
 #endif
-    return peso <= 0 ? 0 : (peso * SCALA_PESO);
+    return (peso * SCALA_PESO);
 }

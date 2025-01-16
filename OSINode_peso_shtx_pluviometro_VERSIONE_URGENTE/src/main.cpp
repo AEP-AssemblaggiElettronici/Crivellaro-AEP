@@ -17,12 +17,14 @@
 #include "Wire.h"
 
 char dispositivoID[7];
-long vbat_meas;                                      // misura batteria
-uint8_t vbat;                                        // variabile batteria
-unsigned long int contaCicli = 0;                    // contatore cicli programma
-unsigned long int sogliaTempo;                       // definisce quanto tempo il dispositivo rimarrà in standby
-unsigned long taraturaC;                             // taratura peso sulla porta C
-unsigned long taraturaD;                             // taratura peso sulla porta D
+long vbat_meas;                   // misura batteria
+uint8_t vbat;                     // variabile batteria
+unsigned long int contaCicli = 0; // contatore cicli programma
+unsigned long int sogliaTempo;    // definisce quanto tempo il dispositivo rimarrà in standby
+unsigned long taraturaC;          // taratura peso sulla porta C
+unsigned long taraturaD;          // taratura peso sulla porta D
+unsigned long pesoPrecedente1 = 0;
+unsigned long pesoPrecedente2 = 0;
 SoftwareSerial Radio = SoftwareSerial(rxPin, txPin); // Definiamo la radio
 bool taratura = 0;                                   // taratura sensori peso al primo ciclo
 unsigned long int tempoAttuale;                      // variabile per salvare i millis()
@@ -80,6 +82,7 @@ void setup()
       dispositivoID[0] != 'l') // se il nome non è valido, RESET!
   {
     Serial.println("ID dispositivo non valido!");
+    wdt_reset();
     delay(1000);
     reboot();
   }
@@ -94,6 +97,7 @@ void setup()
   for (int i = 0; i < 6; i++)
     Serial.print(dispositivoID[i]);
   Serial.println();
+  wdt_reset();
   delay(1000);
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   wdt_disable();
@@ -102,6 +106,7 @@ void setup()
   sogliaTempo = dispositivoID[0] == 'S' ? TEMPO_SIGFOX : TEMPO_LORA;
   Wire.begin();
   Serial.end();
+  wdt_reset();
   delay(1000);
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
@@ -116,7 +121,7 @@ void loop()
   pinMode(BOOST_EN, OUTPUT);
   digitalWrite(BOOST_EN, 1); // tiro su il pin che alimenta le porte C e D
   pinMode(BOOST_SHTDWN, OUTPUT);
-  digitalWrite(BOOST_SHTDWN, 0); //
+  digitalWrite(BOOST_SHTDWN, 0); // se è a 0 tira fuori 4v, a 1 ne tira fuori 12v
   pinMode(IO_ENABLE, OUTPUT);
   digitalWrite(IO_ENABLE, 1); // tiro su il pin che alimenta le porte A e B
   pinMode(I2C_SWITCH, OUTPUT);
@@ -135,14 +140,15 @@ void loop()
   if (!taratura) // Taratura sensori peso
   {
 #if DEBUG
-    Serial.println("Taratura sensori peso su porte C e D");
+    Serial.println("Taratura sensori peso su porta C:");
 #endif
-    digitalWrite(I2C_SWITCH, 1);
-    delay(300);
-    taraturaC = misura_peso(PORT_C_J_1_4, PORT_C_J_1_5, 0);
-    taraturaD = misura_peso(PORT_D_J_4_4, PORT_D_J_4_5, 0);
+    taraturaC = pesa(PORT_C_J_1_4, PORT_C_J_1_5, 0);
+#if DEBUG
+    Serial.println("Taratura sensori peso su porta D:");
+#endif
+    taraturaD = pesa(PORT_D_J_4_4, PORT_D_J_4_5, 0);
     taratura = 1;
-    digitalWrite(I2C_SWITCH, 0);
+    wdt_reset();
     buzzer(); // tre bip per notificare l'inizio della lettura dei sensori
     delay(100);
     buzzer();
@@ -168,6 +174,7 @@ void loop()
     Serial.println("Inizio lettura sensori...");
 #endif
     digitalWrite(IO_ENABLE, 1);
+    wdt_reset();
     delay(300);
 
     // ad ogni ciclo tutte le variabili di lettura vengono azzerate
@@ -176,8 +183,10 @@ void loop()
     word sht31_1Hum = 0;
     word sht31_2Temp = 0;
     word sht31_2Hum = 0;
-    unsigned long peso1 = 0;
-    unsigned long peso2 = 0;
+    long peso1 = 0;
+    long peso2 = 0;
+    long pesoGrammi1 = 0;
+    long pesoGrammi2 = 0;
 
     // A
 #if DEBUG
@@ -205,13 +214,18 @@ void loop()
 #if DEBUG
     Serial.println("Porta C");
 #endif
-    peso1 = misura_peso(PORT_C_J_1_4, PORT_C_J_1_5, taraturaC) - 320;
+    peso1 = pesa(PORT_C_J_1_4, PORT_C_J_1_5, taraturaC);
+    pesoGrammi1 = converti_peso(peso1);
+    pesoGrammi1 = filtro_anti_zero(pesoGrammi1, pesoPrecedente1);
+    pesoPrecedente1 = pesoGrammi1;
 // D
 #if DEBUG
     Serial.println("Porta D");
 #endif
-    peso2 = misura_peso(PORT_D_J_4_4, PORT_D_J_4_5, taraturaD) - 272;
-
+    peso2 = pesa(PORT_D_J_4_4, PORT_D_J_4_5, taraturaD);
+    pesoGrammi2 = converti_peso(peso2);
+    pesoGrammi2 = filtro_anti_zero(pesoGrammi2, pesoPrecedente2);
+    pesoPrecedente2 = pesoGrammi2;
 #if DEBUG
     Serial.println("Fine lettura sensori");
 #endif
@@ -249,12 +263,13 @@ void loop()
       pinMode(SFOX_RST, OUTPUT);
       digitalWrite(SFOX_RST, 1);
       Radio.begin(SERIAL_SIGFOX);
+      wdt_reset();
       delay(100);
       getID();
       delay(100);
       getPAC();
-      delay(5000);
       wdt_reset();
+      delay(5000);
       sendMessageSF(msgSF, 12);
       digitalWrite(SFOX_RST, 0);
 
@@ -336,8 +351,8 @@ void loop()
       msgL[42] = 0xFF;
       msgL[43] = 0xFE;
       //---------------------------------- C20         (Sensore peso 1)
-      msgL[44] = highByte(peso1);
-      msgL[45] = lowByte(peso1);
+      msgL[44] = highByte((int)pesoGrammi1);
+      msgL[45] = lowByte((int)pesoGrammi1);
       //---------------------------------- C21
       msgL[46] = 0xFF;
       msgL[47] = 0xFE;
@@ -354,8 +369,8 @@ void loop()
       msgL[54] = 0xFF;
       msgL[55] = 0xFE;
       //---------------------------------- D26         (Sensore peso 2)
-      msgL[56] = highByte(peso2);
-      msgL[57] = lowByte(peso2);
+      msgL[56] = highByte(pesoGrammi2);
+      msgL[57] = lowByte(pesoGrammi2);
       //---------------------------------- D27
       msgL[58] = 0xFF;
       msgL[59] = 0xFE;
@@ -376,6 +391,7 @@ void loop()
       msgL[69] = 255;
 
       Radio.begin(SERIAL_LORA);
+      wdt_reset();
       delay(100);
       for (int j = 0; j < 70; j++)
         Radio.write(msgL[j]);
@@ -391,6 +407,7 @@ void loop()
 #endif
     }
     buzzer(); // un solo bip per notificare l'invio del messaggio
+    wdt_reset();
     delay(500);
     pluvio = 0;
 #if DEBUG
@@ -421,8 +438,6 @@ void loop()
   pinMode(txPin, INPUT);
   digitalWrite(I2C_SWITCH, 0);
   pinMode(I2C_SWITCH, INPUT);
-  digitalWrite(BOOST_SHTDWN, 0);
-  pinMode(BOOST_SHTDWN, INPUT);
   digitalWrite(PORT_B, 0);
   pinMode(PORT_B, INPUT);
   digitalWrite(PORT_C_J_1_3, 0);
@@ -523,6 +538,7 @@ void sendMessageSF(uint8_t msg[], int size)
 #if DEBUG
     Serial.println("Waiting for response");
 #endif
+    wdt_reset();
     delay(1000);
   }
   while (Radio.available())

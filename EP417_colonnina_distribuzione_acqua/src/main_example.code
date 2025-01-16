@@ -1,0 +1,174 @@
+#include <Arduino.h>
+#include <Wire.h>
+
+#define LED1 11
+#define LED2 12
+#define KEY_RESET 7
+#define KEY_CHANGE 13
+
+// Function for writing a byte to an address on an I2C device
+void writeQTTo(byte device, byte toAddress, byte val)
+{
+    Wire.beginTransmission(device);
+    Wire.write(toAddress);
+    Wire.write(val);
+    Wire.endTransmission();
+}
+
+void readQTFrom(byte device, byte fromAddress, int num, byte result[])
+{
+    Wire.beginTransmission(device);
+    Wire.write(fromAddress);
+    Wire.endTransmission();
+    Wire.requestFrom((int)device, num);
+    int i = 0;
+    while (Wire.available())
+    {
+        result[i] = Wire.read();
+        i++;
+    }
+}
+byte registroQT[6];
+byte tempQT3 = 0;
+byte LED[5];
+byte TT[5];
+byte TTflags[5];
+
+void setup()
+{
+    Serial.begin(115200); // Seriale PC
+    Wire.begin();         // join i2c bus (address optional for master)
+    delay(1);
+
+    pinMode(KEY_RESET, OUTPUT);
+    pinMode(KEY_CHANGE, INPUT);
+    pinMode(LED1, OUTPUT);
+    pinMode(LED2, OUTPUT);
+    digitalWrite(LED1, 1);
+    digitalWrite(LED2, 1);
+    digitalWrite(KEY_RESET, 1);
+    delay(100);
+
+    writeQTTo(0x1c, 6, 0x14);
+    delay(5);
+    // set Key config
+    for (byte i = 28; i <= 34; i++)
+    {
+        writeQTTo(0x1c, i, 0x04);
+        delay(2);
+    }
+    writeQTTo(0x1c, 28, 0x04);
+    delay(2);
+    writeQTTo(0x1c, 30, 0x04);
+    delay(2);
+    writeQTTo(0x1c, 31, 0x04);
+    delay(2);
+    writeQTTo(0x1c, 32, 0x04);
+    delay(2);
+    writeQTTo(0x1c, 33, 0x04);
+    delay(2);
+    writeQTTo(0x1c, 34, 0x04);
+    delay(2);
+    // Set Key 1 as Guard Key
+    writeQTTo(0x1c, 29, 0x14);
+    delay(2);
+    // Set Pulse/Scale config
+    for (byte i = 40; i <= 46; i++)
+    {
+        writeQTTo(0x1c, i, 0x21);
+        delay(1);
+    }
+    writeQTTo(0x1c, 8, 1);   // Low Power Mode
+    writeQTTo(0x1c, 9, 5);   // TTD
+    writeQTTo(0x1c, 10, 2);  // ATD
+    writeQTTo(0x1c, 11, 4);  // Detection Integrator default 4 minimo 1 massimo 32 // Influisce molto su sensibilità, più sale e meno è sensibile
+    writeQTTo(0x1c, 12, 1);  // Touch recall delay
+    writeQTTo(0x1c, 13, 25); // DHT Drift Hold time default 25
+    writeQTTo(0x1c, 14, 0);  // Slider
+    writeQTTo(0x1c, 15, 5);  // Charge time default=0
+    writeQTTo(0x1c, 16, 3);  // Detect Threshold Pulsante Accensione default= 10
+    writeQTTo(0x1c, 17, 12); // Detect Threshold Guard Key default= 10
+    writeQTTo(0x1c, 18, 3);  // Detect Threshold Pulsante Colore Luce default= 10
+    writeQTTo(0x1c, 19, 3);  // Detect Threshold Pulsante Colore Luce default= 10
+    writeQTTo(0x1c, 20, 3);  // Detect Threshold Pulsante Colore Luce default= 10
+    writeQTTo(0x1c, 21, 3);  // Detect Threshold Pulsante Colore Luce default= 10
+    writeQTTo(0x1c, 22, 3);  // Detect Threshold Pulsante Colore Luce default= 10
+
+    // Set Output pin config all ON
+    for (byte i = 35; i <= 39; i++)
+        writeQTTo(0x1c, i, 0x03);
+    delay(200);
+    // Set Output pin config all OFF
+    for (byte i = 35; i <= 39; i++)
+        writeQTTo(0x1c, i, 0x01);
+    delay(100);
+    // Set Output pin config all ON
+    for (byte i = 35; i <= 39; i++)
+        writeQTTo(0x1c, i, 0x03);
+    delay(200);
+    // Set Output pin config all OFF
+    for (byte i = 35; i <= 39; i++)
+        writeQTTo(0x1c, i, 0x01);
+}
+
+void loop()
+{
+    if (digitalRead(KEY_CHANGE) == 0)
+    {
+        readQTFrom(0x1c, 0, 4, registroQT);
+        tempQT3 = registroQT[3];
+        delay(15);
+        readQTFrom(0x1c, 0, 4, registroQT); // Debounce
+
+        if (registroQT[3] != 0 && registroQT[3] == tempQT3)
+        {
+            TT[0] = (registroQT[3] & 0b00000001);      // TT1
+            TT[1] = (registroQT[3] & 0b00000100) >> 2; // TT2
+            TT[2] = (registroQT[3] & 0b00001000) >> 3; // TT3
+            TT[3] = (registroQT[3] & 0b00010000) >> 4; // TT4
+            TT[4] = (registroQT[3] & 0b00100000) >> 5; // TT5
+            TT[5] = (registroQT[3] & 0b01000000) >> 6; // TT6
+
+            if (TT[0])
+            {
+                TTflags[0] ^= 1;
+                LED[4] = TTflags[0] << 1;
+                TT[0] = 0;
+            }
+            if (TT[1])
+            {
+                TTflags[1] ^= 1;
+                LED[1] = TTflags[1] << 1;
+                TT[1] = 0;
+            }
+            if (TT[2])
+            {
+                TTflags[2] ^= 1;
+                LED[0] = TTflags[2] << 1;
+                TT[2] = 0;
+            }
+            if (TT[3])
+            {
+                TTflags[3] ^= 1;
+                LED[3] = TTflags[3] << 1;
+                TT[3] = 0;
+            }
+            if (TT[4])
+            {
+                TTflags[4] ^= 1;
+                LED[2] = TTflags[4] << 1;
+                TT[4] = 0;
+            }
+            if (TT[5])
+            {
+                TTflags[5] ^= 1;
+                // TT5 è senza LED, qui ci andrà altro codice per funzioni varie
+                TT[5] = 0;
+            }
+
+            for (byte i = 35; i <= 39; i++) // aggiornamento ledssss
+                // si somma 1 perchè per essere un I/O il bit 0 deve sempre stare a 1 ( il bit di stato infatti viene spostato al bit uno tramite shift)
+                writeQTTo(0x1c, i, LED[i - 35] + 1);
+        }
+    }
+}

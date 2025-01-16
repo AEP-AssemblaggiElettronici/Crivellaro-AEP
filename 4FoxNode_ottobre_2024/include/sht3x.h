@@ -1,1 +1,1 @@
-unsigned short int *sht3x(int);
+float *sht3x(int);

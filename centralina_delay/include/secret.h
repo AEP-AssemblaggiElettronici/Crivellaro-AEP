@@ -1,2 +1,2 @@
-#define SSID "AEP-WiFi"
-#define PWRD "assemblaggi2021"
+#define SSID "Casetta del Micio" //"AEP-WiFi"
+#define PWRD "martinatiincappucciotutta" //"assemblaggi2021"

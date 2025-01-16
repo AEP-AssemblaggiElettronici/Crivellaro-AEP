@@ -20,11 +20,16 @@ char dispositivoID[7];
 long vbat_meas;                                      // misura batteria
 uint8_t vbat;                                        // variabile batteria
 unsigned long int contaCicli = 0;                    // contatore cicli programma
-int sogliaTempo;                                     // definisce quanto tempo il dispositivo rimarrà in standby
+unsigned long int sogliaTempo;                       // definisce quanto tempo il dispositivo rimarrà in standby
 unsigned long taraturaC;                             // taratura peso sulla porta C
 unsigned long taraturaD;                             // taratura peso sulla porta D
 SoftwareSerial Radio = SoftwareSerial(rxPin, txPin); // Definiamo la radio
 bool taratura = 0;                                   // taratura sensori peso al primo ciclo
+bool forchettaPresente[2];
+unsigned long int tempoAttuale;           // variabile per salvare i millis()
+unsigned long int tempoTrascorso = 0;     // tempo che è passato dal precedente intervallo
+unsigned long int tempoTrascorso1ora = 0; // tempo trascorso da 1 ora, per inviare il drenato
+unsigned long int pluvio = 0;             // conteggio pluviometro
 ////////////////////////////////////////////////
 
 void setup()
@@ -76,6 +81,7 @@ void setup()
       dispositivoID[0] != 'l') // se il nome non è valido, RESET!
   {
     Serial.println("ID dispositivo non valido!");
+    wdt_reset();
     delay(1000);
     reboot();
   }
@@ -90,16 +96,23 @@ void setup()
   for (int i = 0; i < 6; i++)
     Serial.print(dispositivoID[i]);
   Serial.println();
+  wdt_reset();
   delay(1000);
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  buzzer();
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  ////////////////////////////////////////////////////////// Setup generico...
   wdt_disable();
   wdt_enable(WDTO_8S);
 
+  sogliaTempo = dispositivoID[0] == 'S' ? TEMPO_SIGFOX : TEMPO_LORA;
   Wire.begin();
+
+  // discrimina la presenza di forchette analogiche sulle porte C e D
+  pinMode(PORT_C_J_1_3, INPUT);
+  pinMode(PORT_D_J_4_3, INPUT);
+  forchettaPresente[0] = digitalRead(PORT_C_J_1_3) ? 1 : 0;
+  forchettaPresente[1] = digitalRead(PORT_D_J_4_3) ? 1 : 0;
+
+  Serial.end();
+  wdt_reset();
   delay(1000);
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
@@ -114,7 +127,7 @@ void loop()
   pinMode(BOOST_EN, OUTPUT);
   digitalWrite(BOOST_EN, 1); // tiro su il pin che alimenta le porte C e D
   pinMode(BOOST_SHTDWN, OUTPUT);
-  digitalWrite(BOOST_SHTDWN, 0); //
+  digitalWrite(BOOST_SHTDWN, 0); // se è a 0 tira fuori 4v, a 1 ne tira fuori 12v
   pinMode(IO_ENABLE, OUTPUT);
   digitalWrite(IO_ENABLE, 1); // tiro su il pin che alimenta le porte A e B
   pinMode(I2C_SWITCH, OUTPUT);
@@ -123,308 +136,365 @@ void loop()
   vbat_meas = readVcc();
   vbat = (vbat_meas - 2500) / 8; // Compressione in un byte
 #if DEBUG
+  Serial.begin(BAUD);
   Serial.print("Tensione batteria: ");
   Serial.println(vbat);
 #endif
   digitalWrite(IO_ENABLE, 0);
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  //////////////////////////////////////////////////////////
-  ////////////////////////////////////////////////////////// Raccolta letture sensori
-  //////////////////////////////////////////////////////////
-
-  wdt_reset();
-  Serial.println("Inizio lettura sensori...");
-  digitalWrite(IO_ENABLE, 1);
-  delay(300);
-
   if (!taratura) // Taratura sensori peso
   {
-    Serial.println("Taratura sensori peso su porte C e D");
-    digitalWrite(I2C_SWITCH, 1);
-    delay(300);
-    taraturaC = misura_peso(PORT_C_J_1_4, PORT_C_J_1_5, 0);
-    taraturaD = misura_peso(PORT_D_J_4_4, PORT_D_J_4_5, 0);
+#if DEBUG
+    Serial.println("Taratura sensori peso su porta C:");
+#endif
+    taraturaC = pesa(PORT_C_J_1_4, PORT_C_J_1_5, 0);
+#if DEBUG
+    Serial.println("Taratura sensori peso su porta D:");
+#endif
+    taraturaD = pesa(PORT_D_J_4_4, PORT_D_J_4_5, 0);
     taratura = 1;
-    digitalWrite(I2C_SWITCH, 0);
+    wdt_reset();
+    buzzer(); // tre bip per notificare l'inizio della lettura dei sensori
+    delay(100);
+    buzzer();
+    delay(100);
+    buzzer();
   }
 
-  // A
+  digitalWrite(IO_ENABLE, 1);
+  pluvio += pluviometro(); // aggiungiamo gli impulsi al pluviometro locale
+  digitalWrite(IO_ENABLE, 0);
+
+  tempoAttuale = millis();
+  if (tempoAttuale - tempoTrascorso > sogliaTempo)
+  {
+    tempoTrascorso = tempoAttuale;
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    //////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////// Raccolta letture sensori
+    //////////////////////////////////////////////////////////
+
 #if DEBUG
-  Serial.println("Porta A");
+    Serial.println("Inizio lettura sensori...");
 #endif
-  digitalWrite(I2C_SWITCH, 1);
-  word dallas1 = dallasRead(PORT_A);
-  unsigned short int *sht3x_data = sht3x(SHT3X);
-  word sht31_1Temp = sht3x_data[0];
-  word sht31_1Hum = sht3x_data[1];
-  word lux1 = luxmetro(LUXMETRO1);
+    digitalWrite(IO_ENABLE, 1);
+    wdt_reset();
+    delay(300);
+
+    // ad ogni ciclo tutte le variabili di lettura vengono azzerate
+    float *sht3x_data = {};
+    word sht31_1Temp = 0;
+    word sht31_1Hum = 0;
+    word sht31_2Temp = 0;
+    word sht31_2Hum = 0;
+    word dallas1 = 0;
+    word dallas2 = 0;
+    word dallas3 = 0;
+    word dallas4 = 0;
+    word lux1 = 0;
+    word lux2 = 0;
+    word humC = 0;
+    word humD = 0;
+    word anem = 0;
+    word direzioneVento = 0;
+    long peso1 = 0;
+    long peso2 = 0;
+    long pesoGrammi1 = 0;
+    long pesoGrammi2 = 0;
+
+    // A
+#if DEBUG
+    Serial.println("Porta A");
+#endif
+    digitalWrite(I2C_SWITCH, 1);
+    dallas1 = dallasRead(PORT_A);
+    sht3x_data = sht3x(SHT3X);
+    sht31_1Temp = sht3x_data[0];
+    sht31_1Hum = sht3x_data[1];
+    lux1 = luxmetro(LUXMETRO1);
 // B
 #if DEBUG
-  Serial.println("Porta B");
+    Serial.println("Porta B");
 #endif
-  digitalWrite(I2C_SWITCH, 0);
-  word dallas2 = dallasRead(PORT_B);
-  sht3x_data = sht3x(SHT3X);
-  word sht31_2Temp = sht3x_data[0];
-  word sht31_2Hum = sht3x_data[1];
-  word lux2 = luxmetro(LUXMETRO2);
-  word pluv = pluviometro();
-  word dren = 0xFFFE; // COMING SOON
+    digitalWrite(I2C_SWITCH, 0);
+    dallas2 = dallasRead(PORT_B);
+    sht3x_data = sht3x(SHT3X);
+    sht31_2Temp = sht3x_data[0];
+    sht31_2Hum = sht3x_data[1];
+    lux2 = luxmetro(LUXMETRO2);
+    /* I VALORI DEL PLUVIOMETRO VENGONO RACCOLTI IN CONTINUAZIONE FUORI DAL CICLO */
+#if DEBUG
+    Serial.print("Impulsi pluviometro raccolti: ");
+    Serial.print(pluvio);
+    Serial.println();
+#endif
 // C
 #if DEBUG
-  Serial.println("Porta C");
+    Serial.println("Porta C");
 #endif
-  word dallas3 = dallasRead(PORT_C_J_1_5);
-  word humC = forchetta_umidita(PORT_C_J_1_5);
-  int peso1 = misura_peso(PORT_C_J_1_4, PORT_C_J_1_5, taraturaC);
-  word anem = anemometro();
+    dallas3 = forchettaPresente[0] ? 0xFFFE : dallasRead(PORT_C_J_1_5);
+    humC = forchettaPresente[0] ? forchetta_umidita(PORT_C_J_1_5) : 0xFFFE;
+    peso1 = forchettaPresente[0] ? 0xFFFE : pesa(PORT_C_J_1_4, PORT_C_J_1_5, taraturaC);
+    pesoGrammi1 = forchettaPresente[0] ? 0xFFFE : converti_peso(peso1);
+    anem = forchettaPresente[0] ? 0xFFFE : anemometro();
 // D
 #if DEBUG
-  Serial.println("Porta D");
+    Serial.println("Porta D");
 #endif
-  word dallas4 = dallasRead(PORT_D_J_4_5);
-  word humD = forchetta_umidita(PORT_D_J_4_5);
-  int peso2 = misura_peso(PORT_D_J_4_4, PORT_D_J_4_5, taraturaD);
-  word direzioneVento = banderuola();
+    dallas4 = forchettaPresente[1] ? 0xFFFE : dallasRead(PORT_D_J_4_5);
+    humD = forchettaPresente[1] ? forchetta_umidita(PORT_D_J_4_5) : 0xFFFE;
+    peso2 = forchettaPresente[1] ? 0xFFFE : pesa(PORT_D_J_4_4, PORT_D_J_4_5, taraturaD);
+    pesoGrammi2 = forchettaPresente[1] ? 0xFFFE : converti_peso(peso2);
+    direzioneVento = forchettaPresente[1] ? 0xFFFE : banderuola();
 
-  Serial.println("Fine lettura sensori");
-  wdt_reset();
-  delay(1000);
-  digitalWrite(IO_ENABLE, 0);
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    Serial.println("Fine lettura sensori");
+    wdt_reset();
+    delay(1000);
+    digitalWrite(IO_ENABLE, 0);
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  //////////////////////////////////////////////////////////
-  ////////////////////////////////////////////////////////// Trasmissione
-  //////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////// Trasmissione
+    //////////////////////////////////////////////////////////
 
-  if (dispositivoID[0] == 'S')
-  {
+    if (dispositivoID[0] == 'S')
+    {
 //-------------- MESSAGGIO SIGFOX (MAX 12 BYTE)---------
 #if DEBUG
-    Serial.println("Preparazione ed invio messaggio SigFox");
+      Serial.println("Preparazione ed invio messaggio SigFox");
 #endif
-    uint8_t msgSF[12];
-    msgSF[0] = 0xA1;
-    msgSF[1] = 0;
-    msgSF[2] = highByte(humC);
-    msgSF[3] = lowByte(humC);
-    msgSF[4] = highByte(humD);
-    msgSF[5] = lowByte(humD);
-    msgSF[6] = sht31_2Temp;
-    msgSF[7] = sht31_2Hum;
-    msgSF[8] = 0xFE;
-    msgSF[9] = 0xFE;
-    msgSF[10] = vbat;
-    msgSF[11] = 0xED;
+      uint8_t msgSF[12];
+      msgSF[0] = 0xA1;
+      msgSF[1] = 0;
+      msgSF[2] = highByte(humC);
+      msgSF[3] = lowByte(humC);
+      msgSF[4] = highByte(humD);
+      msgSF[5] = lowByte(humD);
+      msgSF[6] = sht31_2Temp;
+      msgSF[7] = sht31_2Hum;
+      msgSF[8] = 0xFE;
+      msgSF[9] = 0xFE;
+      msgSF[10] = vbat;
+      msgSF[11] = 0xED;
 
-    pinMode(SFOX_RST, OUTPUT);
-    digitalWrite(SFOX_RST, 1);
-    Radio.begin(SERIAL_SIGFOX);
-    delay(100);
-    getID();
-    delay(100);
-    getPAC();
-    delay(5000);
+      pinMode(SFOX_RST, OUTPUT);
+      digitalWrite(SFOX_RST, 1);
+      Radio.begin(SERIAL_SIGFOX);
+      wdt_reset();
+      delay(100);
+      getID();
+      delay(100);
+      getPAC();
+      wdt_reset();
+      delay(5000);
+      sendMessageSF(msgSF, 12);
+      digitalWrite(SFOX_RST, 0);
+
+      Serial.println("Messaggio SigFox inviato");
+#if DEBUG
+      for (int i = 0; i < int(sizeof(msgSF) / sizeof(msgSF[0])); i++)
+      {
+        Serial.print(msgSF[i], HEX);
+        Serial.print("|");
+      }
+      Serial.println();
+#endif
+    }
+    else
+    {
+      //-------------- MESSAGGIO LORA (MAX 70 BYTE)---------
+#if DEBUG
+      Serial.println("Preparazione ed invio messaggio LORA");
+#endif
+      byte msgL[70];
+      // I primi 6 bytes contengono i caratteri dell'ID LORA
+      for (int i = 0; i < 6; i++)
+        msgL[i] = dispositivoID[i];
+      //---------------------------------- A01         (SHT31 Temperatura 1)
+      msgL[6] = highByte(sht31_1Temp);
+      msgL[7] = lowByte(sht31_1Temp);
+      //---------------------------------- A02         (SHT31 Umidità 1)
+      msgL[8] = highByte(sht31_1Hum);
+      msgL[9] = lowByte(sht31_1Hum);
+      //---------------------------------- A03         (Luxmetro 1)
+      msgL[10] = highByte(lux1);
+      msgL[11] = lowByte(lux1);
+      //---------------------------------- A04         (SENSORE DALLAS 1)
+      msgL[12] = highByte(dallas1);
+      msgL[13] = lowByte(dallas1);
+      //---------------------------------- A05
+      msgL[14] = 0xFF;
+      msgL[15] = 0xFE;
+      //---------------------------------- A06
+      msgL[16] = 0xFF;
+      msgL[17] = 0xFE;
+      //---------------------------------- B07         (SHT31 Temperatura 2)
+      msgL[18] = highByte(sht31_2Temp);
+      msgL[19] = lowByte(sht31_2Temp);
+      //---------------------------------- B08         (SHT31 Umidità 2)
+      msgL[20] = highByte(sht31_2Hum);
+      msgL[21] = lowByte(sht31_2Hum);
+      //---------------------------------- B09         (Luxmetro 2)
+      msgL[22] = highByte(lux2);
+      msgL[23] = lowByte(lux2);
+      //---------------------------------- B10         (SENSORE DALLAS 2)
+      msgL[24] = highByte(dallas2);
+      msgL[25] = lowByte(dallas2);
+      //---------------------------------- B11         (Pluviometro)
+      msgL[26] = !pluvio ? 0xFF : highByte(pluvio);
+      msgL[27] = !pluvio ? 0xFE : lowByte(pluvio);
+      //---------------------------------- B12         (Drenato)
+      msgL[28] = !pluvio ? 0xFF : highByte(pluvio);
+      msgL[29] = !pluvio ? 0xFE : lowByte(pluvio);
+      //---------------------------------- C13         (Forchetta umidità 1)
+      msgL[30] = highByte(humC);
+      msgL[31] = lowByte(humC);
+      //---------------------------------- C14         (SENSORE DALLAS 3)
+      msgL[32] = highByte(dallas3);
+      msgL[33] = lowByte(dallas3);
+      //---------------------------------- C15         (Anemometro)
+      msgL[34] = highByte(anem);
+      msgL[35] = lowByte(anem);
+      //---------------------------------- C16
+      msgL[36] = 0xFF;
+      msgL[37] = 0xFE;
+      //---------------------------------- C17
+      msgL[38] = 0xFF;
+      msgL[39] = 0xFE;
+      //---------------------------------- C18
+      msgL[40] = 0xFF;
+      msgL[41] = 0xFE;
+      //---------------------------------- C19
+      msgL[42] = 0xFF;
+      msgL[43] = 0xFE;
+      //---------------------------------- C20         (Sensore peso 1)
+      msgL[44] = highByte((int)pesoGrammi1);
+      msgL[45] = lowByte((int)pesoGrammi1);
+      //---------------------------------- C21
+      msgL[46] = 0xFF;
+      msgL[47] = 0xFE;
+      //---------------------------------- C22
+      msgL[48] = 0xFF;
+      msgL[49] = 0xFE;
+      //---------------------------------- D23         (FORCHETTA umidità 2)
+      msgL[50] = highByte(humD);
+      msgL[51] = lowByte(humD);
+      //---------------------------------- D24         (SENSORE DALLAS 4)
+      msgL[52] = highByte(dallas4);
+      msgL[53] = lowByte(dallas4);
+      //---------------------------------- D25         (Segnavento)
+      msgL[54] = highByte(direzioneVento);
+      msgL[55] = lowByte(direzioneVento);
+      //---------------------------------- D26         (Sensore peso 2)
+      msgL[56] = highByte(pesoGrammi2);
+      msgL[57] = lowByte(pesoGrammi2);
+      //---------------------------------- D27
+      msgL[58] = 0xFF;
+      msgL[59] = 0xFE;
+      //---------------------------------- D28
+      msgL[60] = 0xFF;
+      msgL[61] = 0xFE;
+      //---------------------------------- D29           (CICLI del firmware dall'accensione)
+      msgL[62] = highByte(contaCicli);
+      msgL[63] = lowByte(contaCicli);
+      //---------------------------------- BAT30         (BATTERIA)
+      msgL[64] = highByte(vbat);
+      msgL[65] = lowByte(vbat);
+      //----------------------------------- RC
+      msgL[66] = 50; // sostituire con valore randomico
+      //------------------------------ END
+      msgL[67] = 0;
+      msgL[68] = 255;
+      msgL[69] = 255;
+
+      Radio.begin(SERIAL_LORA);
+      wdt_reset();
+      delay(100);
+      for (int j = 0; j < 70; j++)
+        Radio.write(msgL[j]);
+
+      Serial.println("Messaggio LORA inviato");
+#if DEBUG
+      for (int i = 0; i < int(sizeof(msgL) / sizeof(msgL[0])); i++)
+      {
+        Serial.print(msgL[i], HEX);
+        Serial.print("|");
+      }
+      Serial.println();
+#endif
+    }
+    delay(3000);
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    ////////////////////////////////////////////////////////// Modalità risparmio energetico
+    // spegnamo tutti i pin ed entriamo in un ciclo a basso consumo di durata variabile a seconda del protocollo usato
+    pinMode(SFOX_RST, 0);
+    pinMode(SFOX_RST, INPUT);
+    digitalWrite(BOOST_EN, 0);
+    pinMode(BOOST_EN, INPUT);
+    digitalWrite(PORT_D_J_4_4, 0);
+    pinMode(PORT_D_J_4_4, INPUT);
+    digitalWrite(rxPin, 0);
+    pinMode(rxPin, INPUT);
+    digitalWrite(txPin, 0);
+    pinMode(txPin, INPUT);
+    digitalWrite(I2C_SWITCH, 0);
+    pinMode(I2C_SWITCH, INPUT);
+    digitalWrite(BOOST_SHTDWN, 0);
+    pinMode(BOOST_SHTDWN, INPUT);
+    digitalWrite(PORT_B, 0);
+    pinMode(PORT_B, INPUT);
+    digitalWrite(PORT_C_J_1_3, 0);
+    pinMode(PORT_C_J_1_3, INPUT);
+    digitalWrite(PORT_A, 0);
+    pinMode(PORT_A, INPUT);
+    digitalWrite(PORT_C_J_1_4, 0);
+    pinMode(PORT_C_J_1_4, INPUT);
+    digitalWrite(IO_ENABLE, 0);
+    pinMode(IO_ENABLE, INPUT);
+    digitalWrite(PORT_C_J_1_5, 1);
+    pinMode(PORT_C_J_1_5, INPUT); // SLK_D A1
+    digitalWrite(PORT_D_J_4_5, 1);
+    pinMode(PORT_D_J_4_5, INPUT); // SLK_C A2
+    digitalWrite(PORT_D_J_4_3, 0);
+    pinMode(PORT_D_J_4_3, INPUT);
+    digitalWrite(SDA_PIN, 1); // pinMode(A4, INPUT);//PER NON FAR CONSUMARE I BMP IN SLEEP
+    digitalWrite(SCL_PIN, 1); // pinMode(A5, INPUT);//PER NON FAR CONSUMARE I BMP IN SLEEP
+
+    sogliaTempo = dispositivoID[0] == 'S' ? 113 : 38; //  se usiamo SigFox, la soglia è di un quarto d'ora, con LORA, 5 minuti (valori espressi in secondi)
+#if DEBUG
+    Serial.println(dispositivoID[0] == 'S' ? "Attesa... (15 minuti per SigFox)" : "Attesa... (5 minuti per LORA)");
+#endif
     wdt_reset();
-    sendMessageSF(msgSF, 12);
-    digitalWrite(SFOX_RST, 0);
-
-    Serial.println("Messaggio SigFox inviato");
-#if DEBUG
-    for (int i = 0; i < int(sizeof(msgSF) / sizeof(msgSF[0])); i++)
+    delay(1000);
+    for (int i = 0; i < sogliaTempo; i++)
     {
-      Serial.print(msgSF[i], HEX);
-      Serial.print("|");
+      wdt_reset();
+      LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
     }
-    Serial.println();
+
+    // 15 minuti * 60 secondi = 900 secondi / 8 secondi = 112.5 iterazioni (verrà arrotondato)
+    // 5 minuti * 60 secondi = 300 secondi / 8 secondi = 37.5 iterazioni (verrà arrotondato)
+
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    wdt_reset();
+    delay(1000);
+    contaCicli++;
+    buzzer();
+    wdt_reset();
+    delay(250);
+    buzzer();
+#if DEBUG
+    Serial.println("Riavvio ciclo");
 #endif
   }
-  else
-  {
-    //-------------- MESSAGGIO LORA (MAX 70 BYTE)---------
-#if DEBUG
-    Serial.println("Preparazione ed invio messaggio LORA");
-#endif
-    byte msgL[70];
-    // I primi 6 bytes contengono i caratteri dell'ID LORA
-    for (int i = 0; i < 6; i++)
-      msgL[i] = dispositivoID[i];
-    //---------------------------------- A01         (SHT31 Temperatura 1)
-    msgL[6] = highByte(sht31_1Temp);
-    msgL[7] = lowByte(sht31_1Temp);
-    //---------------------------------- A02         (SHT31 Umidità 1)
-    msgL[8] = highByte(sht31_1Hum);
-    msgL[9] = lowByte(sht31_1Hum);
-    //---------------------------------- A03         (Luxmetro 1)
-    msgL[10] = highByte(lux1);
-    msgL[11] = lowByte(lux1);
-    //---------------------------------- A04         (SENSORE DALLAS 1)
-    msgL[12] = highByte(dallas1);
-    msgL[13] = lowByte(dallas1);
-    //---------------------------------- A05
-    msgL[14] = 0xFF;
-    msgL[15] = 0xFE;
-    //---------------------------------- A06
-    msgL[16] = 0xFF;
-    msgL[17] = 0xFE;
-    //---------------------------------- B07         (SHT31 Temperatura 2)
-    msgL[18] = highByte(sht31_2Temp);
-    msgL[19] = lowByte(sht31_2Temp);
-    //---------------------------------- B08         (SHT31 Umidità 2)
-    msgL[20] = highByte(sht31_2Hum);
-    msgL[21] = lowByte(sht31_2Hum);
-    //---------------------------------- B09         (Luxmetro 2)
-    msgL[22] = highByte(lux2);
-    msgL[23] = lowByte(lux2);
-    //---------------------------------- B10         (SENSORE DALLAS 2)
-    msgL[24] = highByte(dallas2);
-    msgL[25] = lowByte(dallas2);
-    //---------------------------------- B11         (Pluviometro)
-    msgL[26] = highByte(pluv);
-    msgL[27] = lowByte(pluv);
-    //---------------------------------- B12         (Drenato)
-    msgL[28] = highByte(dren);
-    msgL[29] = lowByte(dren);
-    //---------------------------------- C13         (Forchetta umidità 1)
-    msgL[30] = highByte(humC);
-    msgL[31] = lowByte(humC);
-    //---------------------------------- C14         (SENSORE DALLAS 3)
-    msgL[32] = highByte(dallas3);
-    msgL[33] = lowByte(dallas3);
-    //---------------------------------- C15         (Anemometro)
-    msgL[34] = highByte(anem);
-    msgL[35] = lowByte(anem);
-    //---------------------------------- C16
-    msgL[36] = 0xFF;
-    msgL[37] = 0xFE;
-    //---------------------------------- C17
-    msgL[38] = 0xFF;
-    msgL[39] = 0xFE;
-    //---------------------------------- C18
-    msgL[40] = 0xFF;
-    msgL[41] = 0xFE;
-    //---------------------------------- C19
-    msgL[42] = 0xFF;
-    msgL[43] = 0xFE;
-    //---------------------------------- C20         (Sensore peso 1)
-    msgL[44] = highByte(peso1);
-    msgL[45] = lowByte(peso1);
-    //---------------------------------- C21
-    msgL[46] = 0xFF;
-    msgL[47] = 0xFE;
-    //---------------------------------- C22
-    msgL[48] = 0xFF;
-    msgL[49] = 0xFE;
-    //---------------------------------- D23         (FORCHETTA umidità 2)
-    msgL[50] = highByte(humD);
-    msgL[51] = lowByte(humD);
-    //---------------------------------- D24         (SENSORE DALLAS 4)
-    msgL[52] = highByte(dallas4);
-    msgL[53] = lowByte(dallas4);
-    //---------------------------------- D25         (Segnavento)
-    msgL[54] = highByte(direzioneVento);
-    msgL[55] = lowByte(direzioneVento);
-    //---------------------------------- D26         (Sensore peso 2)
-    msgL[56] = highByte(peso2);
-    msgL[57] = lowByte(peso2);
-    //---------------------------------- D27
-    msgL[58] = 0xFF;
-    msgL[59] = 0xFE;
-    //---------------------------------- D28
-    msgL[60] = 0xFF;
-    msgL[61] = 0xFE;
-    //---------------------------------- D29           (CICLI del firmware dall'accensione)
-    msgL[62] = highByte(contaCicli);
-    msgL[63] = lowByte(contaCicli);
-    //---------------------------------- BAT30         (BATTERIA)
-    msgL[64] = highByte(vbat);
-    msgL[65] = lowByte(vbat);
-    //----------------------------------- RC
-    msgL[66] = 50; // sostituire con valore randomico
-    //------------------------------ END
-    msgL[67] = 0;
-    msgL[68] = 255;
-    msgL[69] = 255;
-
-    Radio.begin(SERIAL_LORA);
-    delay(100);
-    for (int j = 0; j < 70; j++)
-      Radio.write(msgL[j]);
-
-    Serial.println("Messaggio LORA inviato");
-#if DEBUG
-    for (int i = 0; i < int(sizeof(msgL) / sizeof(msgL[0])); i++)
-    {
-      Serial.print(msgL[i], HEX);
-      Serial.print("|");
-    }
-    Serial.println();
-#endif
-  }
-  delay(3000);
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  ////////////////////////////////////////////////////////// Modalità risparmio energetico
-  // spegnamo tutti i pin ed entriamo in un ciclo a basso consumo di durata variabile a seconda del protocollo usato
-  pinMode(SFOX_RST, 0);
-  pinMode(SFOX_RST, INPUT);
-  digitalWrite(BOOST_EN, 0);
-  pinMode(BOOST_EN, INPUT);
-  digitalWrite(PORT_D_J_4_4, 0);
-  pinMode(PORT_D_J_4_4, INPUT);
-  digitalWrite(rxPin, 0);
-  pinMode(rxPin, INPUT);
-  digitalWrite(txPin, 0);
-  pinMode(txPin, INPUT);
-  digitalWrite(I2C_SWITCH, 0);
-  pinMode(I2C_SWITCH, INPUT);
-  digitalWrite(BOOST_SHTDWN, 0);
-  pinMode(BOOST_SHTDWN, INPUT);
-  digitalWrite(PORT_B, 0);
-  pinMode(PORT_B, INPUT);
-  digitalWrite(PORT_C_J_1_3, 0);
-  pinMode(PORT_C_J_1_3, INPUT);
-  digitalWrite(PORT_A, 0);
-  pinMode(PORT_A, INPUT);
-  digitalWrite(PORT_C_J_1_4, 0);
-  pinMode(PORT_C_J_1_4, INPUT);
-  digitalWrite(IO_ENABLE, 0);
-  pinMode(IO_ENABLE, INPUT);
-  digitalWrite(PORT_C_J_1_5, 1);
-  pinMode(PORT_C_J_1_5, INPUT); // SLK_D A1
-  digitalWrite(PORT_D_J_4_5, 1);
-  pinMode(PORT_D_J_4_5, INPUT); // SLK_C A2
-  digitalWrite(PORT_D_J_4_3, 0);
-  pinMode(PORT_D_J_4_3, INPUT);
-  digitalWrite(SDA_PIN, 1); // pinMode(A4, INPUT);//PER NON FAR CONSUMARE I BMP IN SLEEP
-  digitalWrite(SCL_PIN, 1); // pinMode(A5, INPUT);//PER NON FAR CONSUMARE I BMP IN SLEEP
-
-  sogliaTempo = dispositivoID[0] == 'S' ? 113 : 38; //  se usiamo SigFox, la soglia è di un quarto d'ora, con LORA, 5 minuti (valori espressi in secondi)
-#if DEBUG
-  Serial.println(dispositivoID[0] == 'S' ? "Attesa... (15 minuti per SigFox)" : "Attesa... (5 minuti per LORA)");
-#endif
-  delay(1000);
-  for (int i = 0; i < sogliaTempo; i++)
-    LowPower.powerDown(SLEEP_8S, ADC_OFF, BOD_OFF);
-
-  // 15 minuti * 60 secondi = 900 secondi / 8 secondi = 112.5 iterazioni (verrà arrotondato)
-  // 5 minuti * 60 secondi = 300 secondi / 8 secondi = 37.5 iterazioni (verrà arrotondato)
-
-  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-  delay(1000);
-  contaCicli++;
-  buzzer();
-  delay(250);
-  buzzer();
-#if DEBUG
-  Serial.println("Riavvio ciclo");
-#endif
 }
 
 //------------- SigFOX: PRENDE ID NUMB
@@ -441,6 +511,7 @@ String getID()
   {
     output = Radio.read();
     id += output;
+    wdt_reset();
     delay(10);
   }
 
@@ -465,6 +536,7 @@ String getPAC()
   {
     output = Radio.read();
     pac += output;
+    wdt_reset();
     delay(10);
   }
 
@@ -500,12 +572,14 @@ void sendMessageSF(uint8_t msg[], int size)
   {
     wdt_reset();
     Serial.println("Waiting for response");
+    wdt_reset();
     delay(1000);
   }
   while (Radio.available())
   {
     output = (char)Radio.read();
     status += output;
+    wdt_reset();
     delay(10);
   }
   Serial.println();
@@ -527,6 +601,7 @@ long readVcc()
 #else
   ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
 #endif
+  wdt_reset();
   delay(2);            // Wait for Vref to settle
   ADCSRA |= _BV(ADSC); // Start conversion
   while (bit_is_set(ADCSRA, ADSC))
@@ -543,6 +618,7 @@ void buzzer()
 {
   for (int i = 0; i <= 2; i++)
   {
+    wdt_reset();
     delay(100);
     for (int i = 0; i <= 500; i++)
     {
