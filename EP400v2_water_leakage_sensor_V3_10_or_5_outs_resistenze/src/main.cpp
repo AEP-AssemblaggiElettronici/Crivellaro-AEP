@@ -161,7 +161,6 @@ void show_sensitivity()
 
 bool check_input_connection(int in) // nomen omen
 {
-    Serial.println(analogRead(in));
     if (analogRead(in) > NO_INPUT_THRESHOLD)
         return false;
     return true;
@@ -251,7 +250,6 @@ void check_inputs_state()
 
         binComm++;
     }
-    Serial.println("_____");
     if (mode) // if in 5 inputs mode, sets to 0 unused ModBus input check locations
         for (int i = 15; i < 20; i++)
             discreteInputs[i] = 0;
@@ -425,8 +423,7 @@ void loop()
 
     if (commands[0] == 0x00C0 && commands[1] == 0x0050)
     { // C050, is the ModBus master's command to update slave ID
-        Serial.println(commands[2]);
-        if (commands[2] < 0xE6)
+ì        if (commands[2] < 0xE6)
         {
             EEPROM.update(1, commands[2]);
         }

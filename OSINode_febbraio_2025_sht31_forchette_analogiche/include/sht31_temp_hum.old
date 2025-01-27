@@ -1,0 +1,6 @@
+#include <Adafruit_SHT31.h>
+
+int giveMeInt(float);
+int giveMeFloat(float);
+int sht31_temp(Adafruit_SHT31);
+int sht31_hum(Adafruit_SHT31, int);
