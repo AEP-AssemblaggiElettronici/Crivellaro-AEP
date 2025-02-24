@@ -3,4 +3,4 @@ String getID();
 String getPAC();
 void sendMessageSF(uint8_t[], int);
 long readVcc();
-void buzzer();
+void buzzer(int);

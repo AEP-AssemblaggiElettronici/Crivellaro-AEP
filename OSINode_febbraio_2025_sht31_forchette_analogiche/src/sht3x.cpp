@@ -32,9 +32,9 @@ float *sht3x(int addr)
 
 #if DEBUG
     Serial.print("Valore temperatura: ");
-    Serial.print(tempHum[0]);
+    Serial.print(tempHum[0] / 10);
     Serial.print(" Valore umidità: ");
-    Serial.print(tempHum[1]);
+    Serial.print(tempHum[1] / 10);
     Serial.println();
 #endif
     return tempHum; // ritorna un puntatore ma che può esser letto come un array

@@ -42,8 +42,8 @@
 
 #define SCALA_PESO 0.5629 // 2.8089887640449 //2.2123
 
-#define TEMPO_LORA 180000   // 3 minuti (per CARNEMOLLA)
-#define TEMPO_SIGFOX 900000 // 15 minuti
+#define TEMPO_LORA 38   // 5 minuti
+#define TEMPO_SIGFOX 133 // 15 minuti
 
 #define COSTANTE_C 250 // costanti di peso
 #define COSTANTE_D 250

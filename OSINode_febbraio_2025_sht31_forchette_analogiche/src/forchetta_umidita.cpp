@@ -1,7 +1,6 @@
 #include "forchetta_umidita.h"
 #include "defines.h"
 #include <Arduino.h>
-#include <avr/wdt.h>
 
 unsigned int forchetta_umidita(int porta)
 {
@@ -25,9 +24,6 @@ unsigned int forchetta_umidita(int porta)
     result = media / 10;
     if (result >= 1000)
         result = 1000;
-    /////
-
-    wdt_reset();
 
 #if DEBUG
     Serial.print("Sensore umidità terreno: ");
