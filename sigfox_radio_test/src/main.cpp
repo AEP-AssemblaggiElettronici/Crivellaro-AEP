@@ -1,12 +1,12 @@
 #include <Arduino.h>
-#include <SoftwareSerial.h>
+#include "wiring_private.h"
 
-#define RX 6
-#define TX 7
+#define RX 12
+#define TX 10
 #define SIGFOX_RESET_PIN 2
 
 // IMPORTANTE! Far seguire '\r' (equivale a premere invio) a fine comando, altrimenti non lo invia al dispositivo
-SoftwareSerial radio(RX, TX);
+Uart radio(&sercom1, RX, TX, SERCOM_RX_PAD_3, UART_TX_PAD_2);
 String messageHead = "AT$SF=";
 String getID = "AT$I=10\r";
 String getPAC = "AT$I=11\r";

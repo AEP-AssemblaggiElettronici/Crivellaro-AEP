@@ -1,0 +1,398 @@
+#include <Arduino.h>
+#include <RTCZero.h>
+#include "defines.h"
+#include "wiring_private.h"
+#include "sht3x.h"
+#include "batteria.h"
+#include "rs485.h"
+#include "misura_peso.h"
+
+void SERCOM1_handler();
+void pluvio_ISR();
+void wake_up();
+void go_sleep(uint8_t mins);
+void buzzer(int times);
+
+RTCZero rtc;
+Uart radio(&sercom1, PIN_RADIO_RX, PIN_RADIO_TX, SERCOM_RX_PAD_3, UART_TX_PAD_2); // definizione radio
+TwoWire iQuadroCi(&sercom3, PIN_SDA, PIN_SCL);                                    // definizione I2C
+volatile unsigned long int pluvioCount = 0;
+volatile unsigned long int tempoUltimoImpulso = 0;
+bool taratura = 0;       // taratura sensori peso al primo ciclo
+unsigned long taraturaC; // taratura peso sulla porta C
+unsigned long taraturaD; // taratura peso sulla porta D
+unsigned long pesoPrecedente1 = 0;
+unsigned long pesoPrecedente2 = 0;
+long peso1 = 0;
+long peso2 = 0;
+long pesoGrammi1 = 0;
+long pesoGrammi2 = 0;
+uint8_t msgL[70];
+
+void setup()
+{
+  rtc.begin();
+  rtc.attachInterrupt(wake_up);
+  radio.begin(RADIO_BAUD);
+  forkett.begin(FORKETT_BAUD);
+  forkett2.begin(FORKETT_BAUD);
+
+  PM->APBAMASK.reg |= PM_APBAMASK_EIC;
+  GCLK->CLKCTRL.reg = GCLK_CLKCTRL_ID(GCM_EIC) | GCLK_CLKCTRL_GEN_GCLK0 | GCLK_CLKCTRL_CLKEN;
+  while (GCLK->STATUS.bit.SYNCBUSY)
+    ;
+
+  pinPeripheral(PIN_PLUVIO_A, PIO_EXTINT);
+  pinPeripheral(PIN_PLUVIO_B, PIO_EXTINT);
+  attachInterrupt(PIN_PLUVIO_A, pluvio_ISR, FALLING);
+  attachInterrupt(PIN_PLUVIO_B, pluvio_ISR, FALLING);
+
+  pinPeripheral(PIN_RADIO_TX, PIO_SERCOM);
+  pinPeripheral(PIN_RADIO_RX, PIO_SERCOM); // NON NECESSARIO
+  pinPeripheral(PIN_SDA, PIO_SERCOM);
+  pinPeripheral(PIN_SCL, PIO_SERCOM);
+  pinPeripheral(FORKETT_RX, PIO_SERCOM);
+  pinPeripheral(FORKETT_TX, PIO_SERCOM);
+  pinPeripheral(FORKETT_RX2, PIO_SERCOM_ALT);
+  pinPeripheral(FORKETT_TX2, PIO_SERCOM_ALT);
+
+  pinMode(PIN_CENTRALE_C, INPUT_PULLUP);
+  pinMode(PIN_CENTRALE_D, INPUT_PULLUP);
+  pinMode(PIN_PLUVIO_A, INPUT);
+  pinMode(PIN_PLUVIO_B, INPUT);
+  pinMode(PIN_FORCHETTA_C, INPUT_PULLUP);
+  pinMode(PIN_FORCHETTA_D, INPUT_PULLUP);
+}
+
+void loop()
+{
+  wake_up();
+  buzzer(1);
+
+  Serial.print("Lettura batteria: ");
+  Serial.print(battery_read());
+  Serial.println();
+
+  Serial.print("Dati pluviometro: ");
+  Serial.print(pluvioCount);
+  Serial.println();
+
+  Serial.println("Inizio test I2C su porte A e B");
+  digitalWrite(IO_ENABLE, 1);
+  delay(100);
+
+  digitalWrite(I2C_SELECT, 1); // scansione su porta A
+  delay(100);
+  if (i2c_scan_sht3x(iQuadroCi))
+    sht3x(SHT3X_ADDRESS);
+
+  digitalWrite(I2C_SELECT, 0); // scansione su porta B
+  delay(100);
+  if (i2c_scan_sht3x(iQuadroCi))
+    sht3x(SHT3X_ADDRESS);
+
+  digitalWrite(BOOST_EN, 1);
+  delay(100);
+
+  Serial.println("Rilevamento forchette analogiche su porte C e D");
+  if (!digitalRead(PIN_CENTRALE_C))
+  {
+    digitalWrite(BOOST_SHTDWN, 1);
+    Serial.println("Forchetta umidità presente su porta C");
+    Serial.print("Valore: ");
+    Serial.print(analogRead(PIN_FORCHETTA_C));
+    Serial.println();
+  }
+  else
+  {
+    digitalWrite(BOOST_SHTDWN, 0);
+    delay(10);
+    Serial.println("Forchetta umidità non presente su porta C");
+    Serial.println("Misurazione peso su porta C");
+    if (!taratura)
+    {
+      Serial.println("Taratura sensori peso su porta C:");
+      taraturaC = pesa(PIN_SDA_C, PIN_FORCHETTA_C, 0);
+      delay(100);
+    }
+    else
+    {
+      peso1 = pesa(PIN_SDA_C, PIN_FORCHETTA_C, taraturaC);
+      pesoGrammi1 = converti_peso(peso1);
+      pesoGrammi1 = filtro_anti_zero(pesoGrammi1, pesoPrecedente1);
+      pesoPrecedente1 = pesoGrammi1;
+    }
+  }
+
+  if (!digitalRead(PIN_CENTRALE_D))
+  {
+    digitalWrite(BOOST_SHTDWN, 1);
+    Serial.println("Forchetta umidità presente su porta D");
+    Serial.print("Valore: ");
+    Serial.print(analogRead(PIN_FORCHETTA_D));
+    Serial.println();
+  }
+  else
+  {
+    digitalWrite(BOOST_SHTDWN, 0);
+    delay(10);
+    Serial.println("Forchetta umidità non presente su porta D");
+    Serial.println("Misurazione peso su porta D");
+    if (!taratura)
+    {
+      Serial.println("Taratura sensori peso su porta D:");
+      taraturaD = pesa(PIN_SDA_D, PIN_FORCHETTA_D, 0);
+      delay(100);
+    }
+    else
+    {
+      peso2 = pesa(PIN_SDA_D, PIN_FORCHETTA_D, taraturaD);
+      pesoGrammi2 = converti_peso(peso2);
+      pesoGrammi2 = filtro_anti_zero(pesoGrammi2, pesoPrecedente2);
+      pesoPrecedente2 = pesoGrammi2;
+    }
+  }
+
+  Serial.println("Lettura forchette RS485");
+  rs485(0);
+  rs485(1);
+
+  // I primi 6 bytes contengono i caratteri dell'ID LORA
+  msgL[0] = 'L';
+  msgL[1] = '0';
+  msgL[2] = '0';
+  msgL[3] = '0';
+  msgL[4] = '0';
+  msgL[5] = 'X';
+  //---------------------------------- A01         (SHT31 Temperatura 1)
+  msgL[6] = highByte(65534);
+  msgL[7] = lowByte(65534);
+  //---------------------------------- A02         (SHT31 Umidità 1)
+  msgL[8] = highByte(65534);
+  msgL[9] = lowByte(65534);
+  //---------------------------------- A03         (Luxmetro 1)
+  msgL[10] = highByte(65534);
+  msgL[11] = lowByte(65534);
+  //---------------------------------- A04         (SENSORE DALLAS 1)
+  msgL[12] = highByte(65534);
+  msgL[13] = lowByte(65534);
+  //---------------------------------- A05
+  msgL[14] = highByte(65534);
+  msgL[15] = lowByte(65534);
+  //---------------------------------- A06
+  msgL[16] = highByte(65534);
+  msgL[17] = lowByte(65534);
+  //---------------------------------- B07         (SHT31 Temperatura 2)
+  msgL[18] = highByte(65534);
+  msgL[19] = lowByte(65534);
+  //---------------------------------- B08         (SHT31 Umidità 2)
+  msgL[20] = highByte(65534);
+  msgL[21] = lowByte(65534);
+  //---------------------------------- B09         (Luxmetro 2)
+  msgL[22] = highByte(65534);
+  msgL[23] = lowByte(65534);
+  //---------------------------------- B10         (SENSORE DALLAS 2)
+  msgL[24] = highByte(65534);
+  msgL[25] = lowByte(65534);
+  //---------------------------------- B11         (Pluviometro)
+  msgL[26] = highByte(pluvioCount);
+  msgL[27] = lowByte(pluvioCount);
+  //---------------------------------- B12         (Drenato)
+  msgL[28] = highByte(65534);
+  msgL[29] = lowByte(65534);
+  //---------------------------------- C13         (Forchetta umidità 1)
+  msgL[30] = highByte(65534);
+  msgL[31] = lowByte(65534);
+  //---------------------------------- C14         (SENSORE DALLAS 3)
+  msgL[32] = highByte(65534);
+  msgL[33] = lowByte(65534);
+  //---------------------------------- C15         (Anemometro)
+  msgL[34] = 64;
+  msgL[35] = 32;
+  //---------------------------------- C16
+  msgL[36] = highByte(65534);
+  msgL[37] = lowByte(65534);
+  //---------------------------------- C17
+  msgL[38] = highByte(65534);
+  msgL[39] = lowByte(65534);
+  //---------------------------------- C18
+  msgL[40] = highByte(65534);
+  msgL[41] = lowByte(65534);
+  //---------------------------------- C19
+  msgL[42] = highByte(65534);
+  msgL[43] = lowByte(65534);
+  //---------------------------------- C20         (Sensore peso 1)
+  msgL[44] = highByte(65534);
+  msgL[45] = lowByte(65534);
+  //---------------------------------- C21
+  msgL[46] = highByte(65534);
+  msgL[47] = lowByte(65534);
+  //---------------------------------- C22
+  msgL[48] = highByte(65534);
+  msgL[49] = lowByte(65534);
+  //---------------------------------- D23         (FORCHETTA umidità 2)
+  msgL[50] = highByte(65534);
+  msgL[51] = lowByte(65534);
+  //---------------------------------- D24         (SENSORE DALLAS 4)
+  msgL[52] = highByte(65534);
+  msgL[53] = lowByte(65534);
+  //---------------------------------- D25         (Segnavento)
+  msgL[54] = highByte(65534);
+  msgL[55] = lowByte(65534);
+  //---------------------------------- D26         (Sensore peso 2)
+  msgL[56] = highByte(65534);
+  msgL[57] = lowByte(65534);
+  //---------------------------------- D27
+  msgL[58] = highByte(65534);
+  msgL[59] = lowByte(65534);
+  //---------------------------------- D28
+  msgL[60] = highByte(65534);
+  msgL[61] = lowByte(65534);
+  //---------------------------------- D29           (CICLI del firmware dall'accensione)
+  msgL[62] = highByte(65534);
+  msgL[63] = lowByte(65534);
+  //---------------------------------- BAT30         (BATTERIA)
+  msgL[64] = highByte(65534);
+  msgL[65] = lowByte(65534);
+  //----------------------------------- RC
+  msgL[66] = 50; // sostituire con valore randomico
+  //------------------------------ END
+  msgL[70 - 3] = 0;
+  msgL[70 - 2] = 255;
+  msgL[70 - 1] = 255;
+
+  Serial.println("Messaggio:");
+  for (int i = 0; i < 70; i++)
+  {
+    Serial.print(msgL[i], HEX);
+    Serial.print("|");
+  }
+  Serial.println();
+
+  Serial.println("Invio messaggio LoRa...");
+  for (int i = 0; i < 70; i++)
+  {
+    radio.write(msgL[i]);
+  }
+  delay(1000);
+
+  taratura = 1;
+  delay(2000);
+  go_sleep(1);
+}
+
+extern "C" void SERCOM1_Handler()
+{
+  // Chiama il metodo IrqHandler() della classe Uart, non tua funzione personalizzata
+  radio.IrqHandler();
+}
+
+void pluvio_ISR() // callback interrupt pluviometro
+{
+  unsigned long int ora = millis();
+  if (ora - tempoUltimoImpulso > 100)
+  {
+    buzzer(0); // DEBUG
+    pluvioCount++;
+    tempoUltimoImpulso = ora;
+  }
+}
+
+void go_sleep(uint8_t mins)
+{
+  uint8_t hh = rtc.getHours();
+  uint8_t mm = rtc.getMinutes();
+  uint8_t ss = rtc.getSeconds();
+
+  Serial.print("Current time: ");
+  Serial.print(hh);
+  Serial.print(":");
+  Serial.print(mm);
+  Serial.print(":");
+  Serial.println(ss);
+
+  mm += mins % 60;
+  hh = (hh + mins / 60 + mm / 60) % 24;
+  mm %= 60;
+
+  Serial.print("Wakeup time: ");
+  Serial.print(hh);
+  Serial.print(":");
+  Serial.print(mm);
+  Serial.print(":");
+  Serial.println(ss);
+
+  rtc.setAlarmTime(hh, mm, ss);
+  rtc.enableAlarm(RTCZero::MATCH_HHMMSS);
+  rtc.attachInterrupt(wake_up); // Assicurati che l'interrupt sia correttamente attaccato
+
+  PM->APBCMASK.bit.SERCOM1_ = 0;
+  PM->APBCMASK.bit.SERCOM3_ = 0;
+  PM->APBCMASK.bit.SERCOM5_ = 0;
+  Serial.end();
+
+  // mettiamo in input i pin interessati
+  pinMode(BOOST_EN, INPUT_PULLUP);
+  pinMode(BOOST_SHTDWN, INPUT_PULLUP);
+  pinMode(I2C_SELECT, INPUT_PULLUP);
+  pinMode(PIN_TX_ENABLE, INPUT_PULLUP);
+  pinMode(PIN_SDA_C, INPUT_PULLUP);
+  pinMode(PIN_SDA_D, INPUT_PULLUP);
+
+  EIC->WAKEUP.bit.WAKEUPEN15 = 1; // usa il numero corretto per il pin A
+  EIC->WAKEUP.bit.WAKEUPEN4 = 1;  // usa il numero corretto per il pin B
+
+  // prepara lo sleep
+  SCB->SCR |= SCB_SCR_SLEEPDEEP_Msk; // abilita deep sleep
+  __DSB();
+  __WFI(); // qui dorme per "mins"
+
+  rtc.disableAlarm(); // Disabilita l'allarme al risveglio
+}
+
+void wake_up()
+{
+  Serial.println("Risveglio, riattivazione periferiche...");
+
+  RTC->MODE2.INTFLAG.bit.ALARM0 = 1;
+  SCB->SCR &= ~SCB_SCR_SLEEPDEEP_Msk;
+  PM->APBCMASK.bit.SERCOM1_ = 1;
+  PM->APBCMASK.bit.SERCOM3_ = 1;
+  PM->APBCMASK.bit.SERCOM5_ = 1;
+  delay(1);
+
+  attachInterrupt(PIN_PLUVIO_A, pluvio_ISR, FALLING);
+  attachInterrupt(PIN_PLUVIO_B, pluvio_ISR, FALLING);
+
+  pinMode(BOOST_EN, OUTPUT);
+  pinMode(BOOST_SHTDWN, OUTPUT);
+  pinMode(IO_ENABLE, OUTPUT);
+  pinMode(I2C_SELECT, OUTPUT);
+  pinMode(PIN_TX_ENABLE, OUTPUT);
+  pinMode(PIN_SDA_C, OUTPUT);
+  pinMode(PIN_SDA_D, OUTPUT);
+  digitalWrite(BOOST_EN, 0);
+  digitalWrite(BOOST_SHTDWN, 0);
+
+  battery_init(); // inizializziamo tutti i dispositivi da inizializzare...
+  Serial.begin(BAUD);
+  // radio.begin(RADIO_BAUD, SERIAL_8N1);
+  // forkett.begin(FORKETT_BAUD);
+  // forkett2.begin(FORKETT_BAUD);
+  iQuadroCi.begin();
+}
+
+void buzzer(int times)
+{
+  for (int i = 0; i <= times; i++)
+  {
+    delay(100);
+    for (int i = 0; i <= 500; i++)
+    {
+      digitalWrite(BUZZER, 1);
+      delayMicroseconds(200);
+      digitalWrite(BUZZER, 0);
+      delayMicroseconds(200);
+    }
+  }
+}

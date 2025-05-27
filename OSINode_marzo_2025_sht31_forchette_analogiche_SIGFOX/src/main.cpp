@@ -1,0 +1,476 @@
+#include <Arduino.h>
+#include "defines.h"           // header con tutte le definizioni di pin, indirizzi dispositivi...
+#include "forchetta_umidita.h" // sensore umidità
+#include "sht3x.h"             // sensore I²C temperatura e umidità
+#include <EEPROM.h>
+#include <SoftwareSerial.h>
+#include "LowPower.h" // per entrare in modalità sleep alla fine di ogni ciclo
+#include <avr/wdt.h>  // WOFF WOFF! watchdog
+#include <main.h>
+#include "Wire.h"
+
+char dispositivoID[7];
+long vbat_meas;                                      // misura batteria
+uint8_t vbat;                                        // variabile batteria
+unsigned long int contaCicli = 0;                    // contatore cicli programma
+SoftwareSerial Radio = SoftwareSerial(rxPin, txPin); // Definiamo la radio
+bool forchettaPresente[2];
+unsigned long int tempoAttuale;           // variabile per salvare i millis()
+unsigned long int tempoTrascorso = 0;     // tempo che è passato dal precedente intervallo
+unsigned long int tempoTrascorso1ora = 0; // tempo trascorso da 1 ora, per inviare il drenato
+unsigned long int tempoMillisOreFreddo = 0;
+unsigned long int tempoMillisOreFreddoTrascorso = millis();
+uint8_t oraFreddo = 0;
+////////////////////////////////////////////////
+
+void setup()
+{
+  pinMode(rxPin, INPUT);
+  pinMode(txPin, OUTPUT);
+  ////////////////////////////////////////////////////////// Primo avvio resetta EEPROM
+  if (EEPROM.read(64) != 10)
+  {
+    EEPROM.write(64, 10);
+    EEPROM.write(0, 'S');
+    for (int i = 1; i < 6; i++)
+      EEPROM.write(i, '0');
+  }
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  analogReference(EXTERNAL); // per evitare instabilità nella lettura dei sensori analogici
+
+  Serial.begin(BAUD);
+  wdt_enable(WDTO_8S);
+
+  for (int i = 0; i < 6; i++)
+    dispositivoID[i] = EEPROM.read(i);
+
+  ////////////////////////////////////////////////////////// Settaggio ID dispositivo ('S' per usare protrocollo SigFox, 'L' per utilizzare LORA)
+  Serial.print("ID dispositivo in memoria: ");
+  Serial.print((String)dispositivoID);
+  Serial.println();
+  Serial.println("Cambiare ID dispositivo? (premere entro 5 secondi 's' o qualsiasi altro tasto per procedere)");
+  unsigned int tempoEditDispositivo = millis();
+  while (!Serial.available() && millis() - tempoEditDispositivo < 5000)
+    ; // attende 5 secondi per la pressione del tasto 's'
+  if (Serial.available() > 0)
+  {
+    if (Serial.read() == 's')
+    {
+      Serial.println("Inserire nuovo ID: ");
+      int iID = 1;
+      while (iID < 6)
+      {
+        while (!Serial.available())
+          ; // attende che venga digitato un input
+        dispositivoID[iID] = Serial.read();
+        Serial.print(dispositivoID[iID]); // logga su seriale l'ID digitato in tempo reale
+        iID++;
+      }
+    }
+  }
+  dispositivoID[0] = 'S';
+  Serial.println();
+  Serial.print("ID dispositivo: ");
+  for (int i = 0; i < 6; i++) // aggiornamento ID dispositivo
+    EEPROM.update(i, dispositivoID[i]);
+  for (int i = 0; i < 6; i++)
+    Serial.print(dispositivoID[i]);
+  Serial.println();
+  delay(1000);
+  wdt_reset();
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  wdt_disable();
+  wdt_enable(WDTO_8S);
+
+  // discrimina la presenza di forchette analogiche sulle porte C e D
+  pinMode(PORT_C_J_1_3, INPUT_PULLUP);
+  pinMode(PORT_D_J_4_3, INPUT_PULLUP);
+  delay(10);
+  forchettaPresente[0] = digitalRead(PORT_C_J_1_3) ? 0 : 1; // per qualche motivo le letture di presenza sensori sono invertite
+  forchettaPresente[1] = digitalRead(PORT_D_J_4_3) ? 0 : 1;
+#if DEBUG
+  Serial.println(forchettaPresente[0] ? "Forchetta umidità presente su porta C" : "Forchetta umidità non presente su porta C");
+  Serial.println(forchettaPresente[1] ? "Forchetta umidità presente su porta D" : "Forchetta umidità non presente su porta D");
+#endif
+
+  delay(1000);
+  wdt_reset();
+  buzzer(2);
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+}
+
+void loop()
+{
+  Wire.begin();
+  Radio = SoftwareSerial(rxPin, txPin); // Ridefiniamo gli I/O della radio a ogni inizio ciclo, dopo la modalità a risparmio energetico
+  // pin trasmissione
+  pinMode(rxPin, INPUT);
+  pinMode(txPin, OUTPUT);
+  // pin step up
+  pinMode(BOOST_EN, OUTPUT);
+  digitalWrite(BOOST_EN, 1); // tiro su il pin che alimenta le porte C e D
+  pinMode(BOOST_SHTDWN, OUTPUT);
+  digitalWrite(BOOST_SHTDWN, 0); // se è a 0 tira fuori 4v, a 1 ne tira fuori 12v
+  pinMode(IO_ENABLE, OUTPUT);
+  digitalWrite(IO_ENABLE, 1); // tiro su il pin che alimenta le porte A e B
+  pinMode(I2C_SWITCH, OUTPUT);
+
+  ////////////////////////////////////////////////////////// Lettura batteria
+  vbat_meas = readVcc();
+  vbat = (vbat_meas - 2500) / 8; // Compressione in un byte
+#if DEBUG
+  if (contaCicli != 0)
+  {
+    Serial.print("Tensione batteria: ");
+    Serial.println(vbat);
+  }
+#endif
+  digitalWrite(IO_ENABLE, 0);
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  //////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////// Raccolta letture sensori
+  //////////////////////////////////////////////////////////
+
+#if DEBUG
+  Serial.println("Inizio lettura sensori...");
+#endif
+  digitalWrite(IO_ENABLE, 1);
+  delay(300);
+  for (int i = 0; i < 50; i++)
+    delay(100);
+  wdt_reset();
+
+  // ad ogni ciclo tutte le variabili di lettura vengono azzerate
+  float *sht3x_data = {};
+  word sht31_1Temp = 0;
+  word sht31_1Hum = 0;
+  word sht31_2Temp = 0;
+  word sht31_2Hum = 0;
+  word humC = 0;
+  word humD = 0;
+
+  // A
+#if DEBUG
+  Serial.println("Porta A");
+#endif
+  digitalWrite(I2C_SWITCH, 1);
+  sht3x_data = sht3x(SHT3X);
+  sht31_1Temp = sht3x_data[0];
+  sht31_1Hum = sht3x_data[1];
+// B
+#if DEBUG
+  Serial.println("Porta B");
+#endif
+  digitalWrite(I2C_SWITCH, 0);
+  sht3x_data = sht3x(SHT3X);
+  sht31_2Temp = sht3x_data[0];
+  sht31_2Hum = sht3x_data[1];
+
+  // calcolo ora di freddo sensori A e B
+  if ((sht31_1Temp / 10) < SOGLIA_FREDDO || (sht31_2Temp / 10) < SOGLIA_FREDDO)
+  {
+    unsigned long int tempoMillisTrascorsoInRegistrazione = millis() - tempoMillisOreFreddoTrascorso;
+    tempoMillisOreFreddo += (tempoMillisTrascorsoInRegistrazione + TEMPO_SLEEP_SIGFOX);
+#if DEBUG
+    Serial.print("Millisecondi di freddo accumulati: ");
+    Serial.print(tempoMillisOreFreddo);
+    Serial.println();
+#endif
+
+    if (tempoMillisOreFreddo > UNA_ORA)
+    {
+#if DEBUG
+      Serial.println("Nuova ora di freddo accumulata");
+#endif
+      oraFreddo = 1;
+      tempoMillisOreFreddo = 0;
+    }
+    tempoMillisOreFreddoTrascorso = millis();
+  }
+// C
+#if DEBUG
+  Serial.println("Porta C");
+#endif
+  if (forchettaPresente[0])
+  {
+    digitalWrite(BOOST_SHTDWN, 1);
+    wdt_reset();
+    delay(10);
+    humC = forchetta_umidita(PORT_C_J_1_5);
+    digitalWrite(BOOST_SHTDWN, 0);
+  }
+  else
+    humC = 0xFFFE;
+// D
+#if DEBUG
+  Serial.println("Porta D");
+#endif
+  if (forchettaPresente[1])
+  {
+    digitalWrite(BOOST_SHTDWN, 1);
+    delay(10);
+    humD = forchetta_umidita(PORT_D_J_4_5);
+    digitalWrite(BOOST_SHTDWN, 0);
+  }
+  else
+    humD = 0xFFFE;
+
+  Serial.println("Fine lettura sensori");
+  delay(1000);
+  wdt_reset();
+  digitalWrite(IO_ENABLE, 0);
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  //////////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////// Trasmissione
+  //////////////////////////////////////////////////////////
+
+//-------------- MESSAGGIO SIGFOX (MAX 12 BYTE)---------
+#if DEBUG
+  Serial.println("Preparazione messaggio SigFox...");
+#endif
+  uint8_t msgSF[12];
+  msgSF[0] = 0xA1;
+  msgSF[1] = 0;
+  msgSF[2] = highByte(humC);
+  msgSF[3] = lowByte(humC);
+  msgSF[4] = highByte(humD);
+  msgSF[5] = lowByte(humD);
+  msgSF[6] = sht31_1Temp ? sht31_1Temp : sht31_2Temp;
+  msgSF[7] = sht31_1Hum ? sht31_1Hum : sht31_2Hum;
+  msgSF[8] = oraFreddo;
+  msgSF[9] = 0xFF;
+  msgSF[10] = vbat;
+  msgSF[11] = 0xED;
+
+#if DEBUG
+  Serial.println("Invio messaggio SigFox...");
+#endif
+
+  /*   pinMode(SFOX_RST, OUTPUT);
+    digitalWrite(SFOX_RST, 1);
+    Radio.begin(SERIAL_SIGFOX);
+    wdt_reset();
+    delay(100);
+    getID();
+    delay(100);
+    getPAC();
+    wdt_reset();
+    delay(100);
+    sendMessageSF(msgSF, 12);
+    digitalWrite(SFOX_RST, 0); */
+
+  digitalWrite(SFOX_RST, 1);
+  delay(5000);
+  Radio.begin(SERIAL_SIGFOX);
+  delay(5);
+  sendMessageSF(msgSF, 12);
+  digitalWrite(SFOX_RST, 0);
+  Radio.end();
+
+  Serial.println("Messaggio SigFox inviato");
+#if DEBUG
+  for (int i = 0; i < int(sizeof(msgSF) / sizeof(msgSF[0])); i++)
+  {
+    Serial.print(msgSF[i], HEX);
+    Serial.print("|");
+  }
+  Serial.println();
+#endif
+
+  delay(3000);
+  wdt_reset();
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  ////////////////////////////////////////////////////////// Modalità risparmio energetico
+  // spegnamo tutti i pin ed entriamo in un ciclo a basso consumo di durata variabile a seconda del protocollo usato
+  pinMode(SFOX_RST, 0);
+  // pinMode(SFOX_RST, INPUT);
+  digitalWrite(BOOST_EN, 0);
+  // pinMode(BOOST_EN, INPUT);
+  // digitalWrite(PORT_D_J_4_4, 0);
+  pinMode(PORT_D_J_4_4, INPUT);
+  digitalWrite(rxPin, 0);
+  pinMode(rxPin, INPUT);
+  digitalWrite(txPin, 0);
+  pinMode(txPin, INPUT);
+  digitalWrite(I2C_SWITCH, 0);
+  pinMode(I2C_SWITCH, INPUT);
+  digitalWrite(BOOST_SHTDWN, 0);
+  // pinMode(BOOST_SHTDWN, INPUT);
+  digitalWrite(PORT_B, 0);
+  pinMode(PORT_B, INPUT);
+  // digitalWrite(PORT_C_J_1_3, 0);
+  pinMode(PORT_C_J_1_3, INPUT);
+  digitalWrite(PORT_A, 0);
+  pinMode(PORT_A, INPUT);
+  // digitalWrite(PORT_C_J_1_4, 0);
+  pinMode(PORT_C_J_1_4, INPUT);
+  digitalWrite(IO_ENABLE, 0);
+  // pinMode(IO_ENABLE, INPUT);
+  // digitalWrite(PORT_C_J_1_5, 00);
+  pinMode(PORT_C_J_1_5, INPUT); // SLK_D A1
+  // digitalWrite(PORT_D_J_4_5, 1);
+  pinMode(PORT_D_J_4_5, INPUT); // SLK_C A2
+  // digitalWrite(PORT_D_J_4_3, 0);
+  pinMode(PORT_D_J_4_3, INPUT);
+  digitalWrite(SDA_PIN, /*1*/ 0); // pinMode(A4, INPUT);//PER NON FAR CONSUMARE I BMP IN SLEEP
+  digitalWrite(SCL_PIN, /*1*/ 0); // pinMode(A5, INPUT);//PER NON FAR CONSUMARE I BMP IN SLEEP
+
+#if DEBUG
+  Serial.println("Attesa...");
+#endif
+  buzzer(0);
+  delay(1000);
+  wdt_reset();
+  Wire.end();
+  Serial.end();
+  for (int i = 0; i < TEMPO_SIGFOX; i++)
+    LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
+
+  // 15 minuti * 60 secondi = 900 secondi / 4 secondi = 225 iterazioni (verrà arrotondato)
+  // 5 minuti * 60 secondi = 300 secondi / 4 secondi = 75 iterazioni (verrà arrotondato)
+
+  //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+  delay(1000);
+  wdt_reset();
+  contaCicli++;
+  delay(250);
+  oraFreddo = 0;
+  Serial.begin(BAUD);
+#if DEBUG
+  Serial.println("Riavvio ciclo");
+#endif
+}
+
+//------------- SigFOX: PRENDE ID NUMB
+String getID()
+{
+  String id = "";
+  char output;
+
+  Radio.print("AT$I=10\r");
+  while (!Radio.available())
+    ;
+
+  while (Radio.available())
+  {
+    output = Radio.read();
+    id += output;
+    delay(10);
+  }
+
+  Serial.print("Sigfox Device ID: ");
+  Serial.println(id);
+
+  return id;
+}
+
+//-------------- SigFOX: PRENDE PAC NUMB
+String getPAC()
+{
+  String pac = "";
+  char output;
+
+  Radio.print("AT$I=11\r");
+
+  while (!Radio.available())
+    ;
+
+  while (Radio.available())
+  {
+    output = Radio.read();
+    pac += output;
+    delay(10);
+  }
+
+  Serial.print("PAC number: ");
+  Serial.println(pac);
+
+  return pac;
+}
+
+//-------------- SigFOX: FUNZIONE PER INVIARE MESSAGGI
+void sendMessageSF(uint8_t msg[], int size)
+{
+  Serial.println("Inside sendMessage");
+  String status = "";
+  String hexChar = "";
+  String sigfoxCommand = "";
+  char output;
+  sigfoxCommand += "AT$SF=";
+  for (int i = 0; i < size; i++)
+  {
+    hexChar = String(msg[i], HEX);
+    // padding
+    if (hexChar.length() == 1)
+      hexChar = "0" + hexChar;
+    sigfoxCommand += hexChar;
+  }
+  Serial.println("Sending...");
+  Serial.println(sigfoxCommand);
+  Radio.println(sigfoxCommand);
+  while (!Radio.available())
+  {
+    Serial.println("Waiting for response");
+    wdt_reset();
+    delay(1000);
+  }
+  while (Radio.available())
+  {
+    output = (char)Radio.read();
+    status += output;
+    delay(10);
+  }
+  Serial.println();
+  Serial.print("Status \t");
+  Serial.println(status);
+}
+
+//------------LETTURA BATTERIA senza PIN AN dedicato------
+long readVcc()
+{
+  // Read 1.1V reference against AVcc
+  // set the reference to Vcc and the measurement to the internal 1.1V reference
+#if defined(__AVR_ATmega32U4__) || defined(__AVR_ATmega1280__) || defined(__AVR_ATmega2560__)
+  ADMUX = _BV(REFS0) | _BV(MUX4) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+#elif defined(__AVR_ATtiny24__) || defined(__AVR_ATtiny44__) || defined(__AVR_ATtiny84__)
+  ADMUX = _BV(MUX5) | _BV(MUX0);
+#elif defined(__AVR_ATtiny25__) || defined(__AVR_ATtiny45__) || defined(__AVR_ATtiny85__)
+  ADMUX = _BV(MUX3) | _BV(MUX2);
+#else
+  ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
+#endif
+  delay(2);            // Wait for Vref to settle
+  ADCSRA |= _BV(ADSC); // Start conversion
+  while (bit_is_set(ADCSRA, ADSC))
+    ;                  // measuring
+  uint8_t low = ADCL;  // must read ADCL first - it then locks ADCH
+  uint8_t high = ADCH; // unlocks both
+  long result = (high << 8) | low;
+  result = 1125300L / result; // Calculate Vcc (in mV); 1125300 = 1.1*1023*1000
+  return result;              // Vcc in millivolts
+}
+
+// BUZZER
+void buzzer(int times)
+{
+  for (int i = 0; i <= times; i++)
+  {
+    delay(100);
+    for (int i = 0; i <= 500; i++)
+    {
+      digitalWrite(BUZZER, 1);
+      delayMicroseconds(200);
+      digitalWrite(BUZZER, 0);
+      delayMicroseconds(200);
+    }
+  }
+}

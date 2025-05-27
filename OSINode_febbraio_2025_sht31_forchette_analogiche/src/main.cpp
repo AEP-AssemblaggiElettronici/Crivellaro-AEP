@@ -20,6 +20,9 @@ bool forchettaPresente[2];
 unsigned long int tempoAttuale;           // variabile per salvare i millis()
 unsigned long int tempoTrascorso = 0;     // tempo che è passato dal precedente intervallo
 unsigned long int tempoTrascorso1ora = 0; // tempo trascorso da 1 ora, per inviare il drenato
+unsigned long int tempoMillisOreFreddo = 0;
+unsigned long int tempoMillisOreFreddoTrascorso = millis();
+int oraFreddo = 0;
 ////////////////////////////////////////////////
 
 void setup()
@@ -72,8 +75,8 @@ void setup()
       dispositivoID[0] != 'l') // se il nome non è valido, RESET!
   {
     Serial.println("ID dispositivo non valido!");
-    wdt_reset();
     delay(1000);
+    wdt_reset();
     reboot();
   }
   dispositivoID[0] = toUpperCase(dispositivoID[0]);
@@ -87,8 +90,8 @@ void setup()
   for (int i = 0; i < 6; i++)
     Serial.print(dispositivoID[i]);
   Serial.println();
-  wdt_reset();
   delay(1000);
+  wdt_reset();
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   wdt_disable();
   wdt_enable(WDTO_8S);
@@ -99,7 +102,6 @@ void setup()
   // discrimina la presenza di forchette analogiche sulle porte C e D
   pinMode(PORT_C_J_1_3, INPUT_PULLUP);
   pinMode(PORT_D_J_4_3, INPUT_PULLUP);
-  wdt_reset();
   delay(10);
   forchettaPresente[0] = digitalRead(PORT_C_J_1_3) ? 0 : 1; // per qualche motivo le letture di presenza sensori sono invertite
   forchettaPresente[1] = digitalRead(PORT_D_J_4_3) ? 0 : 1;
@@ -108,9 +110,9 @@ void setup()
   Serial.println(forchettaPresente[1] ? "Forchetta umidità presente su porta D" : "Forchetta umidità non presente su porta D");
 #endif
 
-  wdt_reset();
   delay(1000);
-  buzzer(1);
+  wdt_reset();
+  buzzer(2);
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 }
 
@@ -150,7 +152,6 @@ void loop()
   Serial.println("Inizio lettura sensori...");
 #endif
   digitalWrite(IO_ENABLE, 1);
-  wdt_reset();
   delay(300);
 
   // ad ogni ciclo tutte le variabili di lettura vengono azzerate
@@ -178,6 +179,28 @@ void loop()
   sht3x_data = sht3x(SHT3X);
   sht31_2Temp = sht3x_data[0];
   sht31_2Hum = sht3x_data[1];
+
+  // calcolo ora di freddo sensori A e B
+  if ((sht31_1Temp / 10) < SOGLIA_FREDDO || (sht31_2Temp / 10) < SOGLIA_FREDDO)
+  {
+    unsigned long int tempoMillisTrascorsoInRegistrazione = millis() - tempoMillisOreFreddoTrascorso;
+    tempoMillisOreFreddo += (tempoMillisTrascorsoInRegistrazione + (dispositivoID[0] == 'S' ? TEMPO_SLEEP_SIGFOX : TEMPO_SLEEP_LORA));
+#if DEBUG
+    Serial.print("Millisecondi di freddo accumulati: ");
+    Serial.print(tempoMillisOreFreddo);
+    Serial.println();
+#endif
+
+    if (tempoMillisOreFreddo > UNA_ORA)
+    {
+#if DEBUG
+      Serial.println("Nuova ora di freddo accumulata");
+#endif
+      oraFreddo = 1;
+      tempoMillisOreFreddo = 0;
+    }
+    tempoMillisOreFreddoTrascorso = millis();
+  }
 // C
 #if DEBUG
   Serial.println("Porta C");
@@ -199,7 +222,6 @@ void loop()
   if (forchettaPresente[1])
   {
     digitalWrite(BOOST_SHTDWN, 1);
-    wdt_reset();
     delay(10);
     humD = forchetta_umidita(PORT_D_J_4_5);
     digitalWrite(BOOST_SHTDWN, 0);
@@ -208,8 +230,8 @@ void loop()
     humD = 0xFFFE;
 
   Serial.println("Fine lettura sensori");
-  wdt_reset();
   delay(1000);
+  wdt_reset();
   digitalWrite(IO_ENABLE, 0);
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -285,8 +307,8 @@ void loop()
     msgL[12] = 0xFF;
     msgL[13] = 0xFE;
     //---------------------------------- A05
-    msgL[14] = 0xFF;
-    msgL[15] = 0xFE;
+    msgL[14] = highByte(oraFreddo);
+    msgL[15] = lowByte(oraFreddo);
     //---------------------------------- A06
     msgL[16] = 0xFF;
     msgL[17] = 0xFE;
@@ -370,7 +392,6 @@ void loop()
     msgL[69] = 255;
 
     Radio.begin(SERIAL_LORA);
-    wdt_reset();
     delay(100);
     for (int j = 0; j < 70; j++)
       Radio.write(msgL[j]);
@@ -385,8 +406,8 @@ void loop()
     Serial.println();
 #endif
   }
-  wdt_reset();
   delay(3000);
+  wdt_reset();
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -430,24 +451,21 @@ void loop()
   Serial.println(dispositivoID[0] == 'S' ? "Attesa... (15 minuti per SigFox)" : "Attesa... (5 minuti per LORA)");
 #endif
   buzzer(0);
-  wdt_reset();
   delay(1000);
+  wdt_reset();
   for (int i = 0; i < (sogliaTempo * 2); i++)
-  {
-    wdt_reset();
     LowPower.powerDown(SLEEP_4S, ADC_OFF, BOD_OFF);
-  }
 
   // 15 minuti * 60 secondi = 900 secondi / 8 secondi = 112.5 iterazioni (verrà arrotondato)
   // 5 minuti * 60 secondi = 300 secondi / 8 secondi = 37.5 iterazioni (verrà arrotondato)
 
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-  wdt_reset();
   delay(1000);
-  contaCicli++;
   wdt_reset();
+  contaCicli++;
   delay(250);
+  oraFreddo = 0;
 #if DEBUG
   Serial.println("Riavvio ciclo");
 #endif
@@ -467,7 +485,6 @@ String getID()
   {
     output = Radio.read();
     id += output;
-    wdt_reset();
     delay(10);
   }
 
@@ -492,7 +509,6 @@ String getPAC()
   {
     output = Radio.read();
     pac += output;
-    wdt_reset();
     delay(10);
   }
 
@@ -552,7 +568,6 @@ long readVcc()
 #else
   ADMUX = _BV(REFS0) | _BV(MUX3) | _BV(MUX2) | _BV(MUX1);
 #endif
-  wdt_reset();
   delay(2);            // Wait for Vref to settle
   ADCSRA |= _BV(ADSC); // Start conversion
   while (bit_is_set(ADCSRA, ADSC))

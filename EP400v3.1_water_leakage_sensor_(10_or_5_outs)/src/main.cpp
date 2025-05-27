@@ -26,30 +26,30 @@
 #define PCA9535PW_ADDRESS_LEDS 0x27
 #define BUZZER 6
 #define IN_H 12
-#define NO_INPUT_THRESHOLD 1010
+#define NO_INPUT_THRESHOLD 890 // da 950 passa a 890 con resistenza pullup da 1 MOhm
 #define PCA9535PW_ADDRESS_INPUTS 0x20
 
 SoftwareSerial mySerial(RXPIN, TXPIN);              // defining SoftwareSerial communication
 ModbusRTUSlave modbus(mySerial, DRIVER_ENABLE_PIN); // defining modbus rtu slave
 Timer timerModbus;                                  // timer for Slave ID edit mode
-Timer timerSensitivity;
-Timer timerReboot;  // timer for Slave ID edit mode reboot
-Timer sensorsTimer; // timer for analog sensors
+Timer timerReboot;                                  // timer for Slave ID edit mode reboot
+Timer sensorsTimer;                                 // timer for analog sensors
 
 /* defining ModBus inputs, registers.. */
 bool discreteInputs[20]; // first 10 are input alarm values, the other 10 checks input's connection (1: ok, 0: disconnected)
 uint16_t commands[3];
 
-uint8_t slaveID;                          // slave ID for ModBus, the default is 1
-int sensitivityValue;                     // sensitivity value
-uint8_t sensitivityValueIndex = 0;        // sensitivity value index
-bool modbusEditMode = false;              // edit mode control variable
-bool modbusButtonLastStatus;              // control variable for ModBus button release
-bool sensitivityEditMode = false;         // sensitivity mode control variable
-bool sensitivityButtonLastStatus;         // control variable for sensitivity button release
-int Analog_Value[3] = {1024, 1024, 1024}; // analog values for sensors
-int sensitivityConsts[3] = {650, 650, 650};
-int sensorsInterval = 4000; // time interval for sensors (mss)
+uint8_t slaveID;                   // slave ID for ModBus, the default is 1
+unsigned int sensitivityValue;     // sensitivity value
+uint8_t sensitivityValueIndex = 0; // sensitivity value index
+bool modbusEditMode = false;       // edit mode control variable
+bool modbusButtonLastStatus;       // control variable for ModBus button release
+bool modbusButtonLastStatus2;
+bool switchUnitsTenLastStatus;
+bool sensitivityEditMode = false;                    // sensitivity mode control variable
+unsigned long Analog_Value[3] = {1024, 1024, 1024};  // analog values for sensors
+unsigned int sensitivityConsts[3] = {500, 500, 500}; // con pullup di 1MOhm la soglia scende a 500 // {650, 650, 650}; // qui i vecchi valori
+int sensorsInterval = 4000;                          // time interval for sensors (mss)
 bool alarm = false;
 uint8_t units_ = 0;    // unit digit variable for new ModBus slave ID
 uint8_t tens_ = 0;     // tens digit variable for new ModBus slave ID
@@ -114,7 +114,6 @@ void setup()
     Wire.endTransmission();
 
     timerModbus.start(); // starting hold buttons timer
-    timerSensitivity.start();
     sensorsTimer.start();
 
     delay(100);
@@ -388,43 +387,59 @@ void loop()
     }
 
     if (!digitalRead(MODBUS_BUTTON) && modbusEditMode && !alarm)
-    { // EEPROM update
+    {
         delay(50);
-        timerReboot.stop();
-        if (editUnits)
-        { // press ModBus button to edit units on the slave ID - 0 to 9 and over
-            if (units_ < 9)
-                units_++;
-            else
-                units_ = 0;
-            digitalWrite(LED_GREEN, 0);
-            delay(100);
-            digitalWrite(LED_GREEN, 1);
-            delay(100);
-        }
-        else
+        modbusButtonLastStatus2 = true;
+    }
+    else
+    {
+        if (modbusButtonLastStatus2) // EEPROM update, al rilascio del bottone
         {
-            if (tens_ < 22)
-                tens_++; // press ModBus button to edit tens on the slave ID - 0 to 22 and over
+            timerReboot.stop();
+            if (editUnits)
+            { // premere il pulsante ModBus per modificare le unità dello slave ID, ad ogni pressione corrisponde un incremento, a 9 incrementi riparte da 0
+                if (units_ < 9)
+                    units_++;
+                else
+                    units_ = 0;
+                digitalWrite(LED_GREEN, 0);
+                delay(100);
+                digitalWrite(LED_GREEN, 1);
+                delay(100);
+            }
             else
-                tens_ = 0;
-            digitalWrite(LED_RED, 0);
+            {
+                if (tens_ < 22)
+                    tens_++; // premere il pulsante ModBus per incrementare le decine, da 0 a 22, poi riparte il conto
+                else
+                    tens_ = 0;
+                digitalWrite(LED_RED, 0);
+                delay(100);
+                digitalWrite(LED_RED, 1);
+                delay(100);
+            }
+            slaveID = (tens_ * 10) + units_;
             delay(100);
-            digitalWrite(LED_RED, 1);
-            delay(100);
+            timerReboot.start();
+            modbusButtonLastStatus2 = false;
         }
-        slaveID = (tens_ * 10) + units_;
-        delay(100);
-        timerReboot.start();
     }
 
     if (!digitalRead(SENSITIVITY_BUTTON) && modbusEditMode && !alarm)
-    { // on slave ID edit mode, toggles between tens and unit edit
+    { // in modalità modifica dello slave ID, passa da modifica delle unità a modifica delle decine e viceversa
         delay(50);
-        timerReboot.stop();
-        shortBlinky();
-        editUnits = !editUnits;
-        timerReboot.start();
+        switchUnitsTenLastStatus = true;
+    }
+    else
+    {
+        if (switchUnitsTenLastStatus)
+        {
+            timerReboot.stop();
+            shortBlinky();
+            editUnits = !editUnits;
+            timerReboot.start();
+            switchUnitsTenLastStatus = false;
+        }
     }
 
     /* if Slave ID edit mode is idle for 10 seconds, board reboots
@@ -435,61 +450,6 @@ void loop()
             EEPROM.update(1, 1);
         else
             EEPROM.update(MODBUS_SLAVE_ID_EEPROM_LOCATION, slaveID);
-        blinky();
-        reboot();
-    }
-
-    /* sensitivity button (1-3):
-      1: red led only
-      2: green led only
-      3: both green and red leds
-    */
-    if (!digitalRead(SENSITIVITY_BUTTON) && !modbusEditMode && !alarm)
-    {
-        delay(50);
-        sensitivityButtonLastStatus = 1;
-        timerSensitivity.resume();
-    }
-    else
-    {
-        if (sensitivityButtonLastStatus && !sensitivityEditMode)
-        {
-            blinky_show();
-            show_sensitivity();
-        }
-        timerSensitivity.start();
-        timerSensitivity.pause();
-        sensitivityButtonLastStatus = 0;
-    }
-
-    if (timerSensitivity.read() >= 5000)
-    { // long press Sensitivity button for 5 seconds to enter edit mode
-        if (!sensitivityEditMode && !digitalRead(SENSITIVITY_BUTTON))
-        {
-            delay(50);
-            timerReboot.start();
-            blinky();
-            sensitivityEditMode = true;
-        }
-        delay(100);
-    }
-
-    if ((!digitalRead(MODBUS_BUTTON) || !digitalRead(SENSITIVITY_BUTTON)) && sensitivityEditMode && !alarm)
-    { // sensitivity edit mode
-        delay(50);
-        timerReboot.stop();
-        sensitivityValueIndex++;
-        if (sensitivityValueIndex >= 3)
-            sensitivityValueIndex = 0;
-        show_sensitivity();
-        timerReboot.start();
-        delay(100);
-    }
-
-    // if sensitivity edit mode is idle for 10 seconds, board reboots
-    if (sensitivityEditMode && timerReboot.read() > 10000)
-    {
-        EEPROM.update(SENSITIVITY_EEPROM_LOCATION, sensitivityValueIndex);
         blinky();
         reboot();
     }
@@ -546,12 +506,10 @@ void analog_average(int ch, int AN_ch)
     Analog_Value[ch] = 0;
     delayMicroseconds(1000);
 
-    for (int i = 0; i < 10; i++)
-    {
+    for (int i = 0; i < 1000; i++)
         Analog_Value[ch] += analogRead(AN_ch);
-        delayMicroseconds(500);
-    }
-    Analog_Value[ch] /= 10;
+
+    Analog_Value[ch] /= 1000;
     wdt_reset();
 }
 
@@ -569,30 +527,6 @@ void blinky_show()
     delay(10);
     digitalWrite(LED_RED, 1);
     delay(10);
-}
-
-void show_sensitivity()
-{
-    switch (sensitivityValueIndex)
-    {
-    case 0:
-        digitalWrite(LED_RED, 0);
-        delay(1000);
-        digitalWrite(LED_RED, 1);
-        break;
-    case 1:
-        digitalWrite(LED_GREEN, 0);
-        delay(1000);
-        digitalWrite(LED_GREEN, 1);
-        break;
-    case 2:
-        digitalWrite(LED_RED, 0);
-        digitalWrite(LED_GREEN, 0);
-        delay(1000);
-        digitalWrite(LED_RED, 1);
-        digitalWrite(LED_GREEN, 1);
-        break;
-    }
 }
 
 bool check_input_connection(int in) // nomen omen

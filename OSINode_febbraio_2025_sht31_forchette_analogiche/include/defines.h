@@ -47,3 +47,8 @@
 
 #define COSTANTE_C 250 // costanti di peso
 #define COSTANTE_D 250
+
+#define UNA_ORA 600000//3600000 // un'ora in millisecondi
+#define TEMPO_SLEEP_LORA 300000
+#define TEMPO_SLEEP_SIGFOX 900000
+#define SOGLIA_FREDDO 21//20

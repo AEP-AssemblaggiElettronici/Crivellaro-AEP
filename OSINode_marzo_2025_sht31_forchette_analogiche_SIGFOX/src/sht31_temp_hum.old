@@ -1,0 +1,106 @@
+#include <Arduino.h>
+#include <Adafruit_SHT31.h>
+#include "defines.h"
+
+// funzioni che ritornano la parte intera o decimale di un numero
+int giveMeInt(float number) { return static_cast<int>(number); }
+
+int giveMeFloat(float number)
+{
+    int intPart = static_cast<int>(number);
+    return static_cast<int>((number - intPart) * 10);
+}
+
+// lettura I²C temperatura
+int sht31_temp(Adafruit_SHT31 sht31)
+{
+    if (!sht31.begin(SHT31_DEFAULT_ADDR)) // se non trova il sensore all'indirizzo dato, ritorna 0 e tanti saluti
+    {
+        Serial.println("Couldn't find SHT31");
+        return 0;
+    }
+
+    int temp = (sht31.readTemperature());
+    uint8_t tint = giveMeInt(temp);
+    uint8_t tfloat = giveMeFloat(temp);
+
+    if (tfloat >= 8)
+    {               // CASO .8 e .9
+        tint += 1;  // sale di un grado
+        tint += 30; // mantenere valori non negativi
+        tint *= 2;  // diventa un numero pari
+    }
+    else if (tfloat <= 2)
+    {               // CASO .1 e .2
+        tint += 30; // mantenere valori non negativi
+        tint *= 2;  // diventa un numero pari
+    }
+    else
+    {               // CASO .3, .4, .5, .6,.7
+        tint += 30; // mantenere valori non negativi
+        tint *= 2;  // diventa un numero pari
+        tint += 1;  // diventa un numero dispari
+    }
+
+    uint8_t temp_i2c_1 = tint;
+
+    if (!isnan(temp))
+    {
+        Serial.print("Temp *C = ");
+        Serial.println(temp);
+        Serial.print("il valore Temp *C da spedire è= ");
+        Serial.println(temp_i2c_1);
+    }
+    else
+        Serial.println("Failed to read temperature");
+
+    return temp_i2c_1;
+}
+
+// lettura I²C umidità
+int sht31_hum(Adafruit_SHT31 sht31, int temp)
+{
+    if (!sht31.begin(SHT31_DEFAULT_ADDR)) // se non trova il sensore all'indirizzo dato, ritorna 0 e tanti saluti
+    {
+        Serial.println("Couldn't find SHT31");
+        return 0;
+    }
+
+    int hum = (sht31.readHumidity());
+    uint8_t hint = giveMeInt(hum);
+    uint8_t hfloat = giveMeFloat(hum);
+    uint8_t tfloat = giveMeInt(temp);
+    word hum_i2c_1;
+
+    if (hfloat >= 8)
+    {              // CASO .8 e .9
+        hint += 1; // sale di un grado
+        hint *= 2; // diventa un numero pari
+    }
+    else if (tfloat <= 2)
+    {              // CASO .1 e .2
+        hint *= 2; // diventa un numero pari
+    }
+    else
+    {              // CASO .3, .4, .5, .6,.7
+        hint *= 2; // diventa un numero pari
+        hint += 1; // diventa un numero dispari
+    }
+
+    if (hint >= 1000)
+        hum_i2c_1 = 1000;
+    else
+        hum_i2c_1 = hint;
+
+    if (!isnan(hum))
+    {
+        Serial.print("Hum. % = ");
+        Serial.println(hum);
+        Serial.print("il valore Hum. % da spedire è = ");
+        Serial.println(hum_i2c_1);
+    }
+    else
+        Serial.println("Failed to read humidity");
+
+    return hum_i2c_1;
+}

@@ -1,0 +1,1 @@
+uint16_t rs485(Uart &device, bool tempHum);

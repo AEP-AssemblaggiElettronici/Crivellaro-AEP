@@ -423,7 +423,7 @@ void loop()
 
     if (commands[0] == 0x00C0 && commands[1] == 0x0050)
     { // C050, is the ModBus master's command to update slave ID
-ì        if (commands[2] < 0xE6)
+        if (commands[2] < 0xE6)
         {
             EEPROM.update(1, commands[2]);
         }
