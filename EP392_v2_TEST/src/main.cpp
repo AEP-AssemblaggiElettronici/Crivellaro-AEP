@@ -188,8 +188,9 @@ void loop()
   long pesoGrammi2 = 0;
   uint16_t rs485TempE = 0;
   uint16_t rs485HumE = 0;
-  uint16_t rs485TempF = 0;
-  uint16_t rs485HumF = 0;
+  /* uint16_t rs485TempF = 0;
+  uint16_t rs485HumF = 0; */
+  uint8_t rs485risultati[11] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   uint8_t shtTempA = 0;
   uint8_t shtHumA = 0;
   uint16_t shtTempB = 0;
@@ -279,11 +280,25 @@ void loop()
     if (!digitalRead(PIN_CENTRALE_D))
     {
       digitalWrite(BOOST_SHTDWN, 1);
-      Serial.println("Forchetta umidità presente su porta D");
-      Serial.print("Valore: ");
-      forchettaAnalogD = analogRead(PIN_FORCHETTA_D);
-      Serial.print(forchettaAnalogD);
-      Serial.println();
+
+      Serial.println("Lettura forchette RS485");
+      // forkett.begin(FORKETT_BAUD);
+      forkett2.begin(FORKETT_BAUD);
+      delay(300);
+      // rs485TempE = rs485(forkett, 0);
+      // rs485HumE = rs485(forkett, 1);
+      /* rs485TempF = rs485(forkett2, 1);
+      rs485HumF = rs485(forkett2, 0); */
+      rs485(forkett2, rs485risultati);
+
+      if (!((rs485risultati[5] << 8) | rs485risultati[6])) // if (!rs485TempF)
+      {
+        Serial.println("Forchetta umidità presente su porta D");
+        Serial.print("Valore: ");
+        forchettaAnalogD = analogRead(PIN_FORCHETTA_D);
+        Serial.print(forchettaAnalogD);
+        Serial.println();
+      }
     }
     else
     {
@@ -310,15 +325,6 @@ void loop()
   {
     temperatura1wireD = read_1wire(sens1wireD, indirizzo1wireD, tipo1wireD);
   }
-
-  Serial.println("Lettura forchette RS485");
-  // forkett.begin(FORKETT_BAUD);
-  forkett2.begin(FORKETT_BAUD);
-  delay(300);
-  // rs485TempE = rs485(forkett, 0);
-  // rs485HumE = rs485(forkett, 1);
-  rs485TempF = rs485(forkett2, 0);
-  rs485HumF = rs485(forkett2, 1);
 
   if (sigfoxLora)
   {
@@ -444,18 +450,19 @@ void loop()
   }
   else
   {
-    Serial.println(rs485HumF != 0);
+    for (int i = 0; i < 12; i++)
+      msgS[i] = 0;
 
     msgS[0] = 0xA1;
     msgS[1] = pluvioCount;
-    msgS[2] = rs485HumE != 0 ? highByte(rs485HumE) : highByte(forchettaAnalogC);
-    msgS[3] = rs485HumE != 0 ? lowByte(rs485HumE) : lowByte(forchettaAnalogC);
-    msgS[4] = rs485HumF != 0 ? highByte(rs485HumF) : highByte(forchettaAnalogD);
-    msgS[5] = rs485HumF != 0 ? lowByte(rs485HumF) : lowByte(forchettaAnalogD);
+    msgS[2] = /* rs485HumE != 0 ? */ highByte(rs485HumE) /* : highByte(forchettaAnalogC) */;
+    msgS[3] = /* rs485HumE != 0 ? */ lowByte(rs485HumE) /* : lowByte(forchettaAnalogC) */;
+    msgS[4] = /* rs485HumF != 0 ? */ rs485risultati[3] /* : highByte(forchettaAnalogD) */;
+    msgS[5] = /* rs485HumF != 0 ? */ rs485risultati[4] /* : lowByte(forchettaAnalogD) */;
     msgS[6] = shtTempA ? shtTempA : shtTempB;
     msgS[7] = shtHumA ? shtHumA : shtHumB;
     msgS[8] = lowByte(rs485TempE);
-    msgS[9] = lowByte(rs485TempF);
+    msgS[9] = rs485risultati[6];
     msgS[10] = (batteria - 1500) / 8; // (x - 1500) / 8 serve a comprimere il dato in un byte
     msgS[11] = 0xED;
 
@@ -479,6 +486,7 @@ void loop()
 
   taratura = 1;
   contaCicli++;
+  pluvioCount = 0;
   buzzer(0);
   go_sleep(1);
 }
@@ -488,8 +496,9 @@ void pluvio_ISR() // callback interrupt pluviometro
   unsigned long int ora = millis();
   if (ora - tempoUltimoImpulso > 100)
   {
-    buzzer(0); // DEBUG
+    // buzzer(0); // DEBUG
     pluvioCount++;
+    // buzzer(3); // DEBUG
     tempoUltimoImpulso = ora;
   }
 }
@@ -507,7 +516,7 @@ void go_sleep(uint8_t mins)
   // togliamo la corrente a tutti i pin in output, per risparmiare energia in modalità sleep
   digitalWrite(BOOST_EN, 0);
   digitalWrite(BOOST_SHTDWN, 0);
-  digitalWrite(IO_ENABLE, 0);
+  // digitalWrite(IO_ENABLE, 0);
   digitalWrite(I2C_SELECT, 0);
   digitalWrite(PIN_TX_ENABLE, 0);
   digitalWrite(PIN_SDA_C, 0);
@@ -530,7 +539,7 @@ void go_sleep(uint8_t mins)
     pinMode(PIN_SDA_D, INPUT_PULLUP); */
 
   unsigned int tempoSleep = !sigfoxLora ? /* 8 */ 112 : 60; // se sigfox, dorme per 15 minuti, se lora, dorme per 8
-  for (int i = 0; i < tempoSleep; i++)
+  for (unsigned int i = 0; i < tempoSleep; i++)
     LowPower.deepSleep(8000);
 }
 
@@ -550,7 +559,7 @@ void wake_up()
 
   pinMode(BOOST_EN, OUTPUT);
   pinMode(BOOST_SHTDWN, OUTPUT);
-  pinMode(IO_ENABLE, OUTPUT);
+  // pinMode(IO_ENABLE, OUTPUT);
   pinMode(I2C_SELECT, OUTPUT);
   pinMode(PIN_TX_ENABLE, OUTPUT);
   pinMode(PIN_SDA_C, OUTPUT);

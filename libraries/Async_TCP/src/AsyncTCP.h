@@ -7,7 +7,9 @@
 #include "AsyncTCPVersion.h"
 #define ASYNCTCP_FORK_ESP32Async
 
+#ifndef LIBRETINY
 #include <esp_idf_version.h>
+#endif
 
 #ifdef ARDUINO
 #include "IPAddress.h"
@@ -29,9 +31,9 @@ extern "C" {
 #else
 extern "C" {
 #include <lwip/pbuf.h>
+#include <FreeRTOS.h>
 #include <semphr.h>
 }
-#define CONFIG_ASYNC_TCP_RUNNING_CORE -1  // any available core
 #endif
 
 // If core is not defined, then we are running in Arduino or PIO
@@ -73,7 +75,6 @@ typedef std::function<void(void *, AsyncClient *, struct pbuf *pb)> AcPacketHand
 typedef std::function<void(void *, AsyncClient *, uint32_t time)> AcTimeoutHandler;
 
 struct tcp_pcb;
-struct ip_addr;
 class AsyncTCP_detail;
 
 class AsyncClient {
@@ -303,7 +304,7 @@ protected:
   int8_t _sent(tcp_pcb *pcb, uint16_t len);
   int8_t _fin(tcp_pcb *pcb, int8_t err);
   int8_t _lwip_fin(tcp_pcb *pcb, int8_t err);
-  void _dns_found(struct ip_addr *ipaddr);
+  void _dns_found(ip_addr_t *ipaddr);
 };
 
 class AsyncServer {
