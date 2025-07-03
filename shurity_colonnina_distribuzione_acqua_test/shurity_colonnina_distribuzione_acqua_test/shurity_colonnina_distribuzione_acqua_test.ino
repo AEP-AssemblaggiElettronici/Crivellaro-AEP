@@ -211,7 +211,7 @@ void callback_pulsante_tipo_acqua(lv_event_t *evento) {
   uint8_t checksum = 0 - (tipoAcqua + erogazione);
 
   uint8_t messaggio[4] = { tipoAcqua, erogazione, checksum, 0xED };
-  seriale.write(messaggio);
+  //seriale.write(messaggio);
 }
 
 void callback_bottiglia(lv_event_t *evento) {
