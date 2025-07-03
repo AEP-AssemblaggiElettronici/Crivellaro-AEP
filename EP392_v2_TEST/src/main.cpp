@@ -246,6 +246,9 @@ void loop()
       Serial.println("Forchetta umidità presente su porta C");
       Serial.print("Valore: ");
       forchettaAnalogC = analogRead(PIN_FORCHETTA_C);
+      forchettaAnalogC >>= 2; // eliminiamo i 2 bit meno significativi (è una divisione per 4)
+      if (forchettaAnalogC > 1000)
+        forchettaAnalogC = 1000;
       Serial.print(forchettaAnalogC);
       Serial.println();
     }
@@ -296,6 +299,9 @@ void loop()
         Serial.println("Forchetta umidità presente su porta D");
         Serial.print("Valore: ");
         forchettaAnalogD = analogRead(PIN_FORCHETTA_D);
+        forchettaAnalogD >>= 2; // eliminiamo i 2 bit meno significativi (è una divisione per 4)
+        if (forchettaAnalogD > 1000)
+          forchettaAnalogD = 1000;
         Serial.print(forchettaAnalogD);
         Serial.println();
       }
@@ -455,10 +461,10 @@ void loop()
 
     msgS[0] = 0xA1;
     msgS[1] = pluvioCount;
-    msgS[2] = /* rs485HumE != 0 ? */ highByte(rs485HumE) /* : highByte(forchettaAnalogC) */;
-    msgS[3] = /* rs485HumE != 0 ? */ lowByte(rs485HumE) /* : lowByte(forchettaAnalogC) */;
-    msgS[4] = /* rs485HumF != 0 ? */ rs485risultati[3] /* : highByte(forchettaAnalogD) */;
-    msgS[5] = /* rs485HumF != 0 ? */ rs485risultati[4] /* : lowByte(forchettaAnalogD) */;
+    msgS[2] = highByte(forchettaAnalogC);
+    msgS[3] = lowByte(forchettaAnalogC);
+    msgS[4] = highByte(forchettaAnalogD);
+    msgS[5] = lowByte(forchettaAnalogD);
     msgS[6] = shtTempA ? shtTempA : shtTempB;
     msgS[7] = shtHumA ? shtHumA : shtHumB;
     msgS[8] = lowByte(rs485TempE);

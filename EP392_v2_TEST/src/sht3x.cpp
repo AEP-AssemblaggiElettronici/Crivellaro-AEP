@@ -21,13 +21,15 @@ uint8_t *sht3x(int addr)
     uint8_t tempInt;
     uint8_t tempFloat;
 
+    Serial.println("Invio comandi di lettura SHT31..."); // DEBUG
     Wire.beginTransmission(addr);
     Wire.write(0x2C); // comandi in byte per leggere temperatura e umidità
     Wire.write(0x06);
     Wire.endTransmission();
     delay(500);
 
-    if (Wire.requestFrom(addr, 6) == 6) // legge 6 bytes, i byte 3 e 6 sono valori di checksum
+    Serial.println("Comando inviato, scansione temperatura SHT31..."); // DEBUG
+    if (Wire.requestFrom(addr, 6) == 6)                                // legge 6 bytes, i byte 3 e 6 sono valori di checksum
     {
         byteTemp = Wire.read() << 8 | Wire.read(); // i primi due bytes sono il valore della temperatura
         Wire.read();                               // lettura a vuoto perchè quello che legge è un byte di checksum
@@ -36,7 +38,7 @@ uint8_t *sht3x(int addr)
     else
     {
         uint8_t *ritornoNeutro;
-        ritornoNeutro[0] = 0xFE;
+        ritornoNeutro[0] = 0xFE; // ritorna 255 per temperatura e umidità se non è presente il sensore
         ritornoNeutro[1] = 0xFE;
         return ritornoNeutro;
     }
@@ -96,7 +98,7 @@ uint8_t *sht3x(int addr)
     return ritornoValori; // ritorna un puntatore ma che può esser letto come un array
 }
 
-bool i2c_scan_sht3x(TwoWire dispositivo)
+bool i2c_scan_sht3x(TwoWire dispositivo) // scan I2C per trovare i/l sensori/e
 {
     byte address, error;
     for (address = 1; address < 127; address++)
