@@ -53,6 +53,7 @@ bool alarm = 0;
 void setup()
 {
     // EEPROM first boot
+    noInterrupts();
     if (EEPROM.read(64) != 64)
     {
         EEPROM.write(64, 64);
@@ -63,6 +64,7 @@ void setup()
     // richiamiamo i valori di erogazione salvati in precedenza
     bicchiere = EEPROM.read(EEPROM_BICCHIERE) * 1000;
     bottiglia = EEPROM.read(EEPROM_BOTTIGLIA) * 1000;
+    interrupts();
     tempoErogazione = bicchiere;
 
     Serial.begin(115200); // Seriale PC
@@ -124,20 +126,20 @@ void setup()
         delay(1);
     }
     i2c_write(DEVICE, 8, 1);   // Low Power Mode
-    i2c_write(DEVICE, 9, 5);   // statoPulsantiD
-    i2c_write(DEVICE, 10, 2);  // ATD
+    i2c_write(DEVICE, 9, 20);  // TTD
+    i2c_write(DEVICE, 10, 20); // ATD
     i2c_write(DEVICE, 11, 4);  // Detection Integrator default 4 minimo 1 massimo 32 // Influisce molto su sensibilità, più sale e meno è sensibile
-    i2c_write(DEVICE, 12, 1);  // Touch recall delay
+    i2c_write(DEVICE, 12, 15); // Touch recall delay
     i2c_write(DEVICE, 13, 25); // DHT Drift Hold time default 25
     i2c_write(DEVICE, 14, 0);  // Slider
-    i2c_write(DEVICE, 15, 5);  // Charge time default=0
-    i2c_write(DEVICE, 16, 3);  // Detect Threshold Pulsante Accensione default= 10
-    i2c_write(DEVICE, 17, 12); // Detect Threshold Guard Key default= 10
-    i2c_write(DEVICE, 18, 3);  // Detect Threshold Pulsante Colore Luce default= 10
-    i2c_write(DEVICE, 19, 3);  // Detect Threshold Pulsante Colore Luce default= 10
-    i2c_write(DEVICE, 20, 3);  // Detect Threshold Pulsante Colore Luce default= 10
-    i2c_write(DEVICE, 21, 3);  // Detect Threshold Pulsante Colore Luce default= 10
-    i2c_write(DEVICE, 22, 3);  // Detect Threshold Pulsante Colore Luce default= 10
+    i2c_write(DEVICE, 15, 15); // Charge time default=0
+    i2c_write(DEVICE, 16, 5);  // Detect Threshold Pulsante acqua liscia
+    i2c_write(DEVICE, 17, 10); // Detect Threshold Guard Key default= 10
+    i2c_write(DEVICE, 18, 5);  // Detect Threshold Pulsante fresca frizzante
+    i2c_write(DEVICE, 19, 4);  // Detect Threshold Pulsante fresca liscia
+    i2c_write(DEVICE, 20, 7);  // Detect Threshold Pulsante selezione bottiglia
+    i2c_write(DEVICE, 21, 7);  // Detect Threshold Pulsante selezione bicchiere
+    i2c_write(DEVICE, 22, 10); // Detect Threshold Pulsante opzioni
 
     all_leds(1); // TEST: accende e spegne tutti i leds
     delay(250);
@@ -171,6 +173,11 @@ void loop()
             delay(15);
             i2c_read(DEVICE, 0, 4, registroInput);
 
+#if DEBUG
+            Serial.print("Input touch: ");
+            Serial.println(registroInput[3], BIN);
+#endif
+
             if (registroInput[3] != 0 && registroInput[3] == tempRegistroInput) // gestione input da touch
             {
                 statoPulsanti[0] = (registroInput[3] & 0b00000001);      // statoPulsanti1
@@ -178,7 +185,13 @@ void loop()
                 statoPulsanti[2] = (registroInput[3] & 0b00001000) >> 3; // statoPulsanti3
                 statoPulsanti[3] = (registroInput[3] & 0b00010000) >> 4; // statoPulsanti4
                 statoPulsanti[4] = (registroInput[3] & 0b00100000) >> 5; // statoPulsanti5
-                statoPulsanti[5] = (registroInput[3] & 0b01000000) >> 6; // statoPulsanti6
+                // statoPulsanti[5] = (registroInput[3] & 0b01000000) >> 6; // statoPulsanti6
+                static uint8_t holdCountBtn6 = 0;
+                if (registroInput[3] & 0b01000000)
+                    holdCountBtn6 = 5;
+                else if (holdCountBtn6 > 0)
+                    holdCountBtn6--;
+                statoPulsanti[5] = holdCountBtn6 > 0 ? 1 : 0; // statoPulsanti6
 
                 if (statoPulsanti[0]) // statoPulsanti1, acqua liscia
                 {
@@ -236,7 +249,40 @@ void loop()
                     }
                 }
 
-                if (statoPulsanti[5] && !blocco) // statoPulsanti6 premuto, option mode
+                // nuovo blocco di codice (la pressione funziona maluccio)
+                static uint8_t statoPrecedente = 0;
+                static unsigned long t_inizioPressione = 0;
+                static bool optionLanciato = false;
+
+                if (statoPulsanti[5]) // pulsante premuto
+                {
+                    if (!statoPrecedente)
+                    {
+                        t_inizioPressione = millis();
+                        statoPrecedente = 1;
+                        optionLanciato = false;
+                    }
+
+                    if (!optionLanciato && (millis() - t_inizioPressione > 2000))
+                    {
+                        optionMode = !optionMode;
+                        buzzer(optionMode ? 4 : 2);
+                        blocco = 1;
+                        optionLanciato = true;
+
+#if DEBUG
+                        Serial.println(optionMode ? "Entrata option mode" : "Uscita option mode");
+#endif
+                    }
+                }
+                else // pulsante rilasciato
+                {
+                    statoPrecedente = 0;
+                    blocco = 0;
+                }
+
+                // vecchio blocco di codice
+                /* if (statoPulsanti[5] && !blocco) // statoPulsanti6 premuto, option mode
                 {
                     if (!incrementiamoOption)
                     {
@@ -257,7 +303,7 @@ void loop()
                 {
                     incrementiamoOption = 0;
                     blocco = 0;
-                }
+                } */
             }
         }
 
@@ -306,6 +352,14 @@ void azionaValvole(int led, int valvola, int statoPulsante) // nomen omen, azion
     digitalWrite(valvola, 1);
     for (unsigned int i = 0; i < tempoErogazione; i++)
     {
+        if (digitalRead(KEY_CHANGE) == 0 && !optionMode) // se si ripreme qualsiasi pulsante, l'erogazione si ferma
+        {
+            // siccome creava problemi sull'array registro di input principale, i dati del tocco di stop li salviamo in una variabile apposita
+            unsigned char tempRegIn[6];
+            i2c_read(DEVICE, 0, 4, tempRegIn);
+            if (tempRegIn[3] != 0)
+                break;
+        }
         wdt_reset();
         delay(1);
     }
@@ -396,12 +450,16 @@ void tempo_erogazione(int n) // nomen omen, questo blocco si occupa dell'edit de
         if (bicchiereBottiglia)
         {
             bottiglia = durataPressione;
+            noInterrupts();
             EEPROM.update(EEPROM_BOTTIGLIA, durataPressione / 1000);
+            interrupts();
         }
         else
         {
             bicchiere = durataPressione;
+            noInterrupts();
             EEPROM.update(EEPROM_BICCHIERE, durataPressione / 1000);
+            interrupts();
         }
 
         tempoErogazione = durataPressione;
