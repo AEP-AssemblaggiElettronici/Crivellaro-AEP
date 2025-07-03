@@ -73,11 +73,13 @@ void setup()
   Serial.print("ID dispositivo: ");
   for (int i = 0; i < 6; i++) // aggiornamento ID dispositivo
     EEPROM.update(i, dispositivoID[i]);
+
   for (int i = 0; i < 6; i++)
     Serial.print(dispositivoID[i]);
   Serial.println();
   delay(1000);
   wdt_reset();
+
   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
   wdt_disable();
   wdt_enable(WDTO_8S);
@@ -236,16 +238,16 @@ void loop()
   // I primi 6 bytes contengono i caratteri dell'ID LORA
   for (int i = 0; i < 6; i++)
     msgL[i] = dispositivoID[i];
-  //---------------------------------- A01         (SHT31 Temperatura 1)
-  msgL[6] = highByte(sht31_1Temp);
-  msgL[7] = lowByte(sht31_1Temp);
-  //---------------------------------- A02         (SHT31 Umidità 1)
-  msgL[8] = highByte(sht31_1Hum);
-  msgL[9] = lowByte(sht31_1Hum);
-  //---------------------------------- A03         (Luxmetro 1)
+  //---------------------------------- A01         (Tensiometro)
+  msgL[6] = 0xFF;
+  msgL[7] = 0xFE;
+  //---------------------------------- A02         (Luxmetro)
+  msgL[8] = 0xFF;
+  msgL[9] = 0xFE;
+  //---------------------------------- A03         (OneWire temperatura)
   msgL[10] = 0xFF;
   msgL[11] = 0xFE;
-  //---------------------------------- A04         (SENSORE DALLAS 1)
+  //---------------------------------- A04
   msgL[12] = 0xFF;
   msgL[13] = 0xFE;
   //---------------------------------- A05
@@ -254,42 +256,42 @@ void loop()
   //---------------------------------- A06
   msgL[16] = 0xFF;
   msgL[17] = 0xFE;
-  //---------------------------------- B07         (SHT31 Temperatura 2)
-  msgL[18] = highByte(sht31_2Temp);
-  msgL[19] = lowByte(sht31_2Temp);
-  //---------------------------------- B08         (SHT31 Umidità 2)
-  msgL[20] = highByte(sht31_2Hum);
-  msgL[21] = lowByte(sht31_2Hum);
-  //---------------------------------- B09         (Luxmetro 2)
+  //---------------------------------- B07         (Tensiometro 2)
+  msgL[18] = 0xFF;
+  msgL[19] = 0xFE;
+  //---------------------------------- B08         (Luxmetro 2)
+  msgL[20] = 0xFF;
+  msgL[21] = 0xFE;
+  //---------------------------------- B09         (OneWire temperatura suolo)
   msgL[22] = 0xFF;
   msgL[23] = 0xFE;
-  //---------------------------------- B10         (SENSORE DALLAS 2)
+  //---------------------------------- B10         (Pluviometro)
   msgL[24] = 0xFF;
   msgL[25] = 0xFE;
-  //---------------------------------- B11         (Pluviometro)
+  //---------------------------------- B11         (Drenato)
   msgL[26] = 0xFF;
   msgL[27] = 0xFE;
-  //---------------------------------- B12         (Drenato)
+  //---------------------------------- B12
   msgL[28] = 0xFF;
   msgL[29] = 0xFE;
-  //---------------------------------- C13         (Forchetta umidità 1)
+  //---------------------------------- C13
   msgL[30] = highByte(humC);
   msgL[31] = lowByte(humC);
-  //---------------------------------- C14         (SENSORE DALLAS 3)
+  //---------------------------------- C14         (Anemometro)
   msgL[32] = 0xFF;
   msgL[33] = 0xFE;
-  //---------------------------------- C15         (Anemometro)
+  //---------------------------------- C15
   msgL[34] = 0xFF;
   msgL[35] = 0xFE;
-  //---------------------------------- C16
-  msgL[36] = 0xFF;
-  msgL[37] = 0xFE;
-  //---------------------------------- C17
-  msgL[38] = 0xFF;
-  msgL[39] = 0xFE;
-  //---------------------------------- C18
-  msgL[40] = 0xFF;
-  msgL[41] = 0xFE;
+  //---------------------------------- C16         (Forchetta analogica C)
+  msgL[36] = highByte(humC);
+  msgL[37] = lowByte(humC);
+  //---------------------------------- C17         (SHT temperatura)
+  msgL[38] = highByte(sht31_1Temp);
+  msgL[39] = lowByte(sht31_1Temp);
+  //---------------------------------- C18         (SHT umidità)
+  msgL[40] = highByte(sht31_1Hum);
+  msgL[41] = lowByte(sht31_1Hum);
   //---------------------------------- C19
   msgL[42] = 0xFF;
   msgL[43] = 0xFE;
@@ -302,19 +304,19 @@ void loop()
   //---------------------------------- C22
   msgL[48] = 0xFF;
   msgL[49] = 0xFE;
-  //---------------------------------- D23         (FORCHETTA umidità 2)
-  msgL[50] = highByte(humD);
-  msgL[51] = lowByte(humD);
-  //---------------------------------- D24         (SENSORE DALLAS 4)
-  msgL[52] = 0xFF;
-  msgL[53] = 0xFE;
-  //---------------------------------- D25         (Segnavento)
-  msgL[54] = 0xFF;
-  msgL[55] = 0xFE;
+  //---------------------------------- D23         (SHT temperatura 2)
+  msgL[50] = highByte(sht31_2Temp);
+  msgL[51] = lowByte(sht31_2Temp);
+  //---------------------------------- D24         (SHT umidità 2)
+  msgL[52] = highByte(sht31_2Hum);
+  msgL[53] = lowByte(sht31_2Hum);
+  //---------------------------------- D25         (Forchetta umidità D)
+  msgL[54] = highByte(humD);
+  msgL[55] = lowByte(humD);
   //---------------------------------- D26         (Sensore peso 2)
   msgL[56] = 0xFF;
   msgL[57] = 0xFE;
-  //---------------------------------- D27
+  //---------------------------------- D27         (Direzione vento)
   msgL[58] = 0xFF;
   msgL[59] = 0xFE;
   //---------------------------------- D28
