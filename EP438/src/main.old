@@ -1,0 +1,370 @@
+/*
+LED Controller Arduino - Debug Version CORRETTA
+Con fix per storedPayloadLength
+*/
+
+#include <Arduino.h>
+#include <SoftwareSerial.h>
+#include <Adafruit_NeoPixel.h>
+
+// === CONFIGURAZIONE ===
+#define RXpin 8
+#define TXpin 7
+#define CONTROLPIN 10
+#define L1 2
+#define L2 3
+#define L3 4
+
+#define DIP1 A0
+#define DIP2 A1
+#define DIP3 A2
+#define DIP4 A3
+#define DIP5 A4
+#define DIP6 A5
+
+// === PROTOCOLLO ===
+#define MAX_LEDS 50
+#define STX 0x02
+#define MAX_PAYLOAD 150
+
+const uint8_t dips[] = {DIP1, DIP2, DIP3, DIP4, DIP5, DIP6};
+uint8_t id = 0;
+uint8_t stripLength = 5;
+
+SoftwareSerial ser(RXpin, TXpin);
+Adafruit_NeoPixel led1(5, L1, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel led2(5, L2, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel led3(5, L3, NEO_GRB + NEO_KHZ800);
+
+enum State
+{
+  WAIT_STX,
+  WAIT_ID,
+  WAIT_CMD,
+  WAIT_LEN,
+  WAIT_DATA,
+  WAIT_CHK
+};
+State state = WAIT_STX;
+
+uint8_t cmd, len, chk, rxChk, rxID;
+uint8_t buffer[MAX_PAYLOAD];
+uint8_t idx;
+uint8_t storedPayloadLength = 0; // FIX: Lunghezza payload memorizzato
+bool hasPayload = false;
+
+void readID()
+{
+  id = 0;
+  for (int i = 0; i < 6; i++)
+    id |= (digitalRead(dips[i]) << i);
+  id ^= 0b111111;
+}
+
+void printBinary(uint8_t val)
+{
+  for (int i = 7; i >= 0; i--)
+  {
+    Serial.print((val >> i) & 1);
+  }
+}
+
+void updateLEDs()
+{
+  if (!hasPayload)
+  {
+    Serial.println("ERRORE: Nessun payload valido!");
+    return;
+  }
+
+  Serial.println("=== AGGIORNAMENTO LED ===");
+  uint8_t numLeds = storedPayloadLength / 9;
+  Serial.print("Numero LED da aggiornare: ");
+  Serial.println(numLeds);
+  Serial.print("Payload length: ");
+  Serial.println(storedPayloadLength);
+  Serial.print("stripLength: ");
+  Serial.println(stripLength);
+
+  // DEBUG: Mostra i primi bytes del buffer
+  Serial.print("Primi 27 bytes buffer: ");
+  for (int i = 0; i < 27 && i < storedPayloadLength; i++)
+  {
+    Serial.print(buffer[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+
+  for (uint8_t i = 0; i < numLeds; i++)
+  {
+    Serial.print("=== PROCESSING LED ");
+    Serial.print(i);
+    Serial.println(" ===");
+
+    uint8_t base = i * 9;
+
+    // HSV per ogni striscia
+    uint8_t h1 = buffer[base], s1 = buffer[base + 1], v1 = buffer[base + 2];
+    uint8_t h2 = buffer[base + 3], s2 = buffer[base + 4], v2 = buffer[base + 5];
+    uint8_t h3 = buffer[base + 6], s3 = buffer[base + 7], v3 = buffer[base + 8];
+
+    Serial.print("LED ");
+    Serial.print(i);
+    Serial.print(" - S1:(");
+    Serial.print(h1);
+    Serial.print(",");
+    Serial.print(s1);
+    Serial.print(",");
+    Serial.print(v1);
+    Serial.print(") S2:(");
+    Serial.print(h2);
+    Serial.print(",");
+    Serial.print(s2);
+    Serial.print(",");
+    Serial.print(v2);
+    Serial.print(") S3:(");
+    Serial.print(h3);
+    Serial.print(",");
+    Serial.print(s3);
+    Serial.print(",");
+    Serial.print(v3);
+    Serial.println(")");
+
+    Serial.print("Chiamando setPixelColor per LED ");
+    Serial.println(i);
+    led1.setPixelColor(i, led1.ColorHSV(h1 * 257, s1, v1));
+    led2.setPixelColor(i, led2.ColorHSV(h2 * 257, s2, v2));
+    led3.setPixelColor(i, led3.ColorHSV(h3 * 257, s3, v3));
+    Serial.print("setPixelColor completato per LED ");
+    Serial.println(i);
+  }
+
+  Serial.println("Chiamando show()...");
+  led1.show();
+  led2.show();
+  led3.show();
+  Serial.println("✓ LED aggiornati!");
+}
+
+void setup()
+{
+  for (int i = 0; i < 6; i++)
+    pinMode(dips[i], INPUT_PULLUP);
+  pinMode(CONTROLPIN, OUTPUT);
+  digitalWrite(CONTROLPIN, LOW);
+
+  Serial.begin(9600);
+  ser.begin(9600);
+
+  led1.begin();
+  led1.clear();
+  led2.begin();
+  led2.clear();
+  led3.begin();
+  led3.clear();
+
+  led1.updateLength(5);
+  led2.updateLength(5);
+  led3.updateLength(5);
+
+  readID();
+
+  Serial.println("=== LED CONTROLLER DEBUG CORRETTA ===");
+  Serial.print("ID dispositivo: ");
+  Serial.print(id);
+  Serial.print(" (binario: 0b");
+  printBinary(id);
+  Serial.println(")");
+  Serial.print("Lunghezza strisce: ");
+  Serial.println(stripLength);
+  Serial.println("In attesa di comandi seriali...");
+  Serial.println("=============================");
+}
+
+void loop()
+{
+  readID();
+
+  while (ser.available())
+  {
+    uint8_t b = ser.read();
+
+    Serial.print("RX: 0x");
+    Serial.print(b, HEX);
+    Serial.print(" (");
+    Serial.print(b);
+    Serial.print(") - Stato: ");
+
+    switch (state)
+    {
+    case WAIT_STX:
+      Serial.println("WAIT_STX");
+      if (b == STX)
+      {
+        Serial.println(">>> STX ricevuto! <<<");
+        chk = 0;
+        idx = 0;
+        state = WAIT_ID;
+      }
+      else
+      {
+        Serial.print("Atteso STX (0x02), ricevuto 0x");
+        Serial.println(b, HEX);
+      }
+      break;
+
+    case WAIT_ID:
+      Serial.println("WAIT_ID");
+      rxID = b;
+      chk ^= b;
+      Serial.print("ID ricevuto: ");
+      Serial.print(rxID);
+      Serial.print(" (0b");
+      printBinary(rxID);
+      Serial.print(") - ID locale: ");
+      Serial.print(id);
+      Serial.print(" (0b");
+      printBinary(id);
+      Serial.println(")");
+      state = WAIT_CMD;
+      break;
+
+    case WAIT_CMD:
+      Serial.println("WAIT_CMD");
+      cmd = b;
+      chk ^= b;
+      Serial.print("Comando ricevuto: 0x");
+      Serial.println(cmd, HEX);
+      state = WAIT_LEN;
+      break;
+
+    case WAIT_LEN:
+      Serial.println("WAIT_LEN");
+      len = b;
+      chk ^= b;
+      Serial.print("Lunghezza: ");
+      Serial.println(len);
+
+      if (cmd == 0x00 && len <= MAX_PAYLOAD && len % 9 == 0)
+      {
+        Serial.println("Comando 0x00 - Preparazione ricezione payload");
+        idx = 0;
+        state = WAIT_DATA;
+      }
+      else if (cmd == 0x01)
+      {
+        Serial.print("Comando 0x01 - Nuova lunghezza strisce: ");
+        Serial.println(len);
+        stripLength = len;
+        led1.updateLength(stripLength);
+        led2.updateLength(stripLength);
+        led3.updateLength(stripLength);
+        state = WAIT_CHK;
+      }
+      else if (cmd == 0x02)
+      {
+        Serial.println("Comando 0x02 - Apply payload (broadcast)");
+        state = WAIT_CHK;
+      }
+      else
+      {
+        Serial.println("Comando o lunghezza non validi");
+        state = WAIT_CHK;
+      }
+      break;
+
+    case WAIT_DATA:
+      Serial.print("WAIT_DATA[");
+      Serial.print(idx);
+      Serial.println("]");
+      buffer[idx++] = b;
+      chk ^= b;
+      Serial.print("Byte payload: 0x");
+      Serial.print(b, HEX);
+      Serial.print(" (");
+      Serial.print(b);
+      Serial.println(")");
+
+      if (idx >= len)
+      {
+        Serial.println("Payload completo ricevuto!");
+        state = WAIT_CHK;
+      }
+      break;
+
+    case WAIT_CHK:
+      Serial.println("WAIT_CHK");
+      rxChk = b;
+
+      Serial.print("Checksum ricevuto: 0x");
+      Serial.print(rxChk, HEX);
+      Serial.print(" - Calcolato: 0x");
+      Serial.println(chk, HEX);
+
+      if (chk == rxChk)
+      {
+        Serial.println("✓ CHECKSUM OK!");
+        Serial.print("Eseguendo comando 0x");
+        Serial.println(cmd, HEX);
+
+        switch (cmd)
+        {
+        case 0x00: // Store payload
+        {
+          Serial.println("Elaborazione comando 0x00...");
+          // Ricalcola ID target
+          uint8_t targetID = rxChk;
+          for (uint8_t i = 0; i < idx; i++)
+            targetID ^= buffer[i];
+          targetID ^= cmd ^ len;
+
+          Serial.print("Target ID calcolato: ");
+          Serial.print(targetID);
+          Serial.print(" - Mio ID: ");
+          Serial.println(id);
+
+          if (targetID == id)
+          {
+            hasPayload = true;
+            storedPayloadLength = len; // FIX: Memorizza lunghezza payload
+            Serial.println("✓ PAYLOAD MEMORIZZATO PER QUESTO DISPOSITIVO!");
+            Serial.print("Payload length memorizzato: ");
+            Serial.println(storedPayloadLength);
+          }
+          else
+          {
+            Serial.println("- Payload per altro dispositivo, ignorato");
+          }
+        }
+        break;
+
+        case 0x01: // Set length
+          Serial.print("✓ LUNGHEZZA AGGIORNATA: ");
+          Serial.println(stripLength);
+          break;
+
+        case 0x02: // Apply
+          Serial.println("*** DENTRO CASE 0x02 ***");
+          Serial.println("✓ COMANDO APPLY - AGGIORNAMENTO LED...");
+          digitalWrite(CONTROLPIN, HIGH);
+          updateLEDs();
+          digitalWrite(CONTROLPIN, LOW);
+          break;
+
+        default:
+          Serial.print("Comando sconosciuto: 0x");
+          Serial.println(cmd, HEX);
+          break;
+        }
+      }
+      else
+      {
+        Serial.println("✗ CHECKSUM ERRATO!");
+      }
+
+      Serial.println("--- Fine comando ---");
+      state = WAIT_STX;
+      break;
+    }
+  }
+}

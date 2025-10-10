@@ -37,6 +37,7 @@ byte registroInput[6];         // array registri input pulsanti
 byte tempRegistroInput = 0;    // variabile per debounce input pulsanti
 byte LED[5];                   // array stato led
 byte statoPulsanti[5];         // array stato pulsanti
+byte contaAllarmi = 0;         // nomen omen
 unsigned long tempoErogazione; // nomen omen, il valore iniziale è quello del tempo di erogazione del bicchiere
 unsigned int bicchiere;        // tempo di erogazione personalizzato
 unsigned int bottiglia;        // tempo di erogazione personalizzato
@@ -49,6 +50,8 @@ bool incrementiamo = 0;      // variabile di controllo durante l'incremento del 
 bool blocco = 0;             // variabile che blocca nei momenti critici
 bool incrementiamoOption = 0;
 bool alarm = 0;
+bool statoLedSinistro = 1; // due variabili booleane per bloccare la continua trasmissione di dati I2C
+bool statoLedDestro = 0;   // per accendere i led del tipo di contenitore
 
 void setup()
 {
@@ -75,7 +78,9 @@ void setup()
     Serial.println(bottiglia);
 #endif
     Wire.begin(); // join i2c bus (address optional for master)
-    delay(1);
+    Wire.setTimeout(50);
+    wdt_reset();
+    delay(200);
 
     pinMode(KEY_RESET, OUTPUT);
     pinMode(KEY_CHANGE, INPUT);
@@ -96,14 +101,9 @@ void setup()
     //////////////////////////////////////////////////////////// diverse scritture di bytes sui registri via I²C
     //////////////////////////////////////////////////////////// consultare il datasheet dell'ATMEL QT2120 per maggiori info
     ////////////////////////////////////////////////////////////
-    i2c_write(DEVICE, 6, GUARD_KEY);
-    delay(5);
+
     // set Key config
-    for (byte i = 28; i <= 34; i++)
-    {
-        i2c_write(DEVICE, i, 0x04);
-        delay(2);
-    }
+
     i2c_write(DEVICE, 28, 0x04);
     delay(2);
     i2c_write(DEVICE, 30, 0x04);
@@ -119,6 +119,7 @@ void setup()
     // Set Key 1 as Guard Key
     i2c_write(DEVICE, 29, GUARD_KEY);
     delay(2);
+
     // Set Pulse/Scale config
     for (byte i = 40; i <= 46; i++)
     {
@@ -163,7 +164,13 @@ void loop()
     wdt_reset();
     if (!alarm)
     {
+
         if (!digitalRead(ALARM)) // check allarme allagamento
+            ++contaAllarmi;
+        else
+            contaAllarmi = 0;
+
+        if (contaAllarmi > 100)
             alarm = 1;
 
         if (digitalRead(KEY_CHANGE) == 0) // se il pin di controllo riceve un qualsiasi input dal touch...
@@ -185,13 +192,7 @@ void loop()
                 statoPulsanti[2] = (registroInput[3] & 0b00001000) >> 3; // statoPulsanti3
                 statoPulsanti[3] = (registroInput[3] & 0b00010000) >> 4; // statoPulsanti4
                 statoPulsanti[4] = (registroInput[3] & 0b00100000) >> 5; // statoPulsanti5
-                // statoPulsanti[5] = (registroInput[3] & 0b01000000) >> 6; // statoPulsanti6
-                static uint8_t holdCountBtn6 = 0;
-                if (registroInput[3] & 0b01000000)
-                    holdCountBtn6 = 5;
-                else if (holdCountBtn6 > 0)
-                    holdCountBtn6--;
-                statoPulsanti[5] = holdCountBtn6 > 0 ? 1 : 0; // statoPulsanti6
+                statoPulsanti[5] = (registroInput[3] & 0b01000000) >> 6; // statoPulsanti6
 
                 if (statoPulsanti[0]) // statoPulsanti1, acqua liscia
                 {
@@ -224,6 +225,8 @@ void loop()
                         if (!bicchiereBottiglia)
                         {
                             bicchiereBottiglia = 1;
+                            statoLedDestro = 1;
+                            statoLedSinistro = 0;
 #if DEBUG
                             Serial.println("Tempo erogazione bottiglia:");
                             Serial.println(bottiglia); // DEBUG
@@ -240,6 +243,8 @@ void loop()
                         if (bicchiereBottiglia)
                         {
                             bicchiereBottiglia = 0;
+                            statoLedDestro = 0;
+                            statoLedSinistro = 1;
 #if DEBUG
                             Serial.println("Tempo erogazione bicchiere:");
                             Serial.println(bicchiere); // DEBUG
@@ -249,7 +254,7 @@ void loop()
                     }
                 }
 
-                // nuovo blocco di codice (la pressione funziona maluccio)
+                // nuovo blocco di codice per option mode (la pressione funziona maluccio)
                 static uint8_t statoPrecedente = 0;
                 static unsigned long t_inizioPressione = 0;
                 static bool optionLanciato = false;
@@ -278,50 +283,45 @@ void loop()
                 else // pulsante rilasciato
                 {
                     statoPrecedente = 0;
+                    t_inizioPressione = 0; //
                     blocco = 0;
                 }
-
-                // vecchio blocco di codice
-                /* if (statoPulsanti[5] && !blocco) // statoPulsanti6 premuto, option mode
-                {
-                    if (!incrementiamoOption)
-                    {
-                        inizioPressioneOption = millis();
-                        incrementiamoOption = 1;
-                    }
-                    else if (millis() - inizioPressioneOption > 2000) // Pressione superiore a 2 secondi
-                    {
-                        optionMode = !optionMode;
-                        buzzer(optionMode ? 4 : 2);
-                        blocco = 1; // Blocca l'input fino al rilascio
-#if DEBUG
-                        Serial.println(optionMode ? "Entrata option mode" : "Uscita option mode");
-#endif
-                    }
-                }
-                else if (!statoPulsanti[5] && incrementiamoOption) // statoPulsanti6 rilasciato
-                {
-                    incrementiamoOption = 0;
-                    blocco = 0;
-                } */
             }
         }
 
         if (!bicchiereBottiglia) // accende/spegne i led a seconda della selezione modalità bicchiere o bottiglia
         {
             if (!optionMode)
-                i2c_write(DEVICE, 37, LED_ON);
+            {
+                if (statoLedSinistro)
+                {
+                    i2c_write(DEVICE, 37, LED_ON);
+                    i2c_write(DEVICE, 38, LED_OFF);
+                    statoLedSinistro = 0;
+                }
+            }
             else // lampeggio option mode
+            {
                 i2c_write(DEVICE, 37, millis() % 1000 > 500 ? LED_ON : LED_OFF);
-            i2c_write(DEVICE, 38, LED_OFF);
+                i2c_write(DEVICE, 38, LED_OFF);
+            }
         }
         else
         {
             if (!optionMode)
-                i2c_write(DEVICE, 38, LED_ON);
+            {
+                if (statoLedDestro)
+                {
+                    i2c_write(DEVICE, 38, LED_ON);
+                    i2c_write(DEVICE, 37, LED_OFF);
+                    statoLedDestro = 0;
+                }
+            }
             else // lampeggio option mode
+            {
                 i2c_write(DEVICE, 38, millis() % 1000 > 500 ? LED_ON : LED_OFF);
-            i2c_write(DEVICE, 37, LED_OFF);
+                i2c_write(DEVICE, 37, LED_OFF);
+            }
         }
     }
     else // ALLARME ALLAGAMENTO COLONNINA ATTIVO!
@@ -340,6 +340,7 @@ void loop()
             alarm = 0;
         }
     }
+    // Serial.println("FINE CICLO"); // DEBUG
     wdt_reset();
 }
 ////////////////////////////////////////////////////////////
@@ -390,6 +391,8 @@ void beep(int time)
 {
     for (time; time--;)
     {
+        if (time % 100 == 0)
+            wdt_reset();
         digitalWrite(BUZZER, 1);
         delayMicroseconds(100);
         digitalWrite(BUZZER, 0);

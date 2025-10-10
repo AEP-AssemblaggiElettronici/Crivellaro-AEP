@@ -1,0 +1,173 @@
+/*
+LED Test Script - Versione 1.0.0
+2025 Fabio Crivellaro
+
+Test semplice per verificare il funzionamento delle 3 strisce LED.
+Accende i LED con colori diversi per ogni striscia.
+
+=== CHANGELOG ===
+v1.0.0 (2025-09-10):
+- Script di test iniziale
+- Test colori base: rosso, verde, blu
+- Animazione semplice per verifica funzionamento
+*/
+
+#include <Adafruit_NeoPixel.h>
+
+// === CONFIGURAZIONE PIN ===
+#define L1 2 // Striscia 1
+#define L2 3 // Striscia 2
+#define L3 4 // Striscia 3
+
+#define NUM_LEDS 5 // Numero LED per striscia
+
+// Inizializza le 3 strisce
+Adafruit_NeoPixel strip1(NUM_LEDS, L1, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip2(NUM_LEDS, L2, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip3(NUM_LEDS, L3, NEO_GRB + NEO_KHZ800);
+
+void setup()
+{
+    Serial.begin(9600);
+    Serial.println("=== LED Test Script v1.0.0 ===");
+    Serial.println("Inizializzazione strisce LED...");
+
+    // Inizializza le strisce
+    strip1.begin();
+    strip2.begin();
+    strip3.begin();
+
+    // Spegni tutti i LED
+    strip1.clear();
+    strip2.clear();
+    strip3.clear();
+
+    strip1.show();
+    strip2.show();
+    strip3.show();
+
+    Serial.println("Strisce inizializzate!");
+    Serial.println("Avvio test colori...");
+
+    delay(1000);
+}
+
+void loop()
+{
+    Serial.println("\n--- Test 1: Colori solidi ---");
+
+    // Test 1: Colori solidi diversi per ogni striscia
+    Serial.println("Striscia 1: ROSSO");
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+        strip1.setPixelColor(i, strip1.Color(255, 0, 0)); // Rosso
+    }
+    strip1.show();
+
+    delay(500);
+
+    Serial.println("Striscia 2: VERDE");
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+        strip2.setPixelColor(i, strip2.Color(0, 255, 0)); // Verde
+    }
+    strip2.show();
+
+    delay(500);
+
+    Serial.println("Striscia 3: BLU");
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+        strip3.setPixelColor(i, strip3.Color(0, 0, 255)); // Blu
+    }
+    strip3.show();
+
+    delay(2000);
+
+    Serial.println("\n--- Test 2: Accensione sequenziale ---");
+
+    // Test 2: Accensione LED uno alla volta
+    // Spegni tutto
+    strip1.clear();
+    strip2.clear();
+    strip3.clear();
+    strip1.show();
+    strip2.show();
+    strip3.show();
+
+    delay(500);
+
+    // Accendi LED uno alla volta su tutte le strisce
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+        Serial.print("Accendo LED ");
+        Serial.println(i);
+
+        strip1.setPixelColor(i, strip1.Color(255, 100, 0)); // Arancione
+        strip2.setPixelColor(i, strip2.Color(255, 0, 255)); // Magenta
+        strip3.setPixelColor(i, strip3.Color(0, 255, 255)); // Ciano
+
+        strip1.show();
+        strip2.show();
+        strip3.show();
+
+        delay(500);
+    }
+
+    delay(1000);
+
+    Serial.println("\n--- Test 3: Effetto arcobaleno ---");
+
+    // Test 3: Colori arcobaleno su tutte le strisce
+    for (int cycle = 0; cycle < 3; cycle++)
+    {
+        for (int j = 0; j < 256; j++)
+        {
+            for (int i = 0; i < NUM_LEDS; i++)
+            {
+                // Calcola colore arcobaleno
+                uint32_t color = strip1.ColorHSV((j + i * 65536 / NUM_LEDS) & 0xFFFF, 255, 255);
+
+                strip1.setPixelColor(i, color);
+                strip2.setPixelColor(i, color);
+                strip3.setPixelColor(i, color);
+            }
+
+            strip1.show();
+            strip2.show();
+            strip3.show();
+
+            delay(10);
+        }
+    }
+
+    Serial.println("\n--- Test 4: Bianco pieno ---");
+
+    // Test 4: Tutti i LED bianchi al 50%
+    for (int i = 0; i < NUM_LEDS; i++)
+    {
+        strip1.setPixelColor(i, strip1.Color(128, 128, 128)); // Bianco 50%
+        strip2.setPixelColor(i, strip2.Color(128, 128, 128));
+        strip3.setPixelColor(i, strip3.Color(128, 128, 128));
+    }
+
+    strip1.show();
+    strip2.show();
+    strip3.show();
+
+    delay(2000);
+
+    Serial.println("\n--- Spegnimento ---");
+
+    // Spegni tutto
+    strip1.clear();
+    strip2.clear();
+    strip3.clear();
+    strip1.show();
+    strip2.show();
+    strip3.show();
+
+    delay(3000);
+
+    Serial.println("\n=== Ciclo completato, riavvio... ===\n");
+}
