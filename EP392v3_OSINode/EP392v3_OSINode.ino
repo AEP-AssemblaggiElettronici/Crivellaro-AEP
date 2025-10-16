@@ -196,6 +196,11 @@ void setup() {
     delay(100);
   }
 
+  digitalWrite(IO_ENABLE, 0);
+  digitalWrite(BOOST_EN, 0);
+  digitalWrite(BOOST_SHTDWN, 0);
+  delay(500);
+
   // se  lo SPIFFS non ha all'interno questo file, formattiamo lo SPIFFS
   if (!SPIFFS.begin()) {
     Serial.println("Errore nell'inizializzazione di SPIFFS!");
@@ -215,12 +220,12 @@ void setup() {
   uint8_t conteggioRisposta = 0;
   String rispostaModulo = "";
   do {
-    String rispostaModulo = command("AT$I=11\r");
-    if (rispostaModulo.length() == 17) break;
+    rispostaModulo = command("AT$I=11\r");
+    if (rispostaModulo.length() == 18) break;
     conteggioRisposta++;
   } while (conteggioRisposta < 4);
   delay(1000);
-  if (rispostaModulo == "" || rispostaModulo.length() != 17) {
+  if (rispostaModulo == "" || rispostaModulo.length() != 18) {  // 18 è la lunghezza del PAC in sigfox
     Serial.println("Modulo LoRa installato");
     radio.flush();
     radio.end();
@@ -307,7 +312,7 @@ void setup() {
 void loop() {
   delay(200);
   // se sigfox, 15 minuti, se lora, 8 (valori espressi in microsecondi)
-  static uint64_t cicloDurataUs = !sigfoxLora ? 900ULL * 1000000ULL : /* 480ULL */ 20ULL * 1000000ULL;
+  static uint64_t cicloDurataUs = !sigfoxLora ? 900ULL /* 20ULL */ * 1000000ULL : 480ULL /* 20ULL */ * 1000000ULL;
   static uint64_t cicloInizio = 0;
   if (!eraInSleepMode) {  // se non siamo in lightsleep e veniamo risvegliati dall'interrupt pluviometro, legge i dati sensori come dovrebbe
 
@@ -360,10 +365,10 @@ void loop() {
     uint16_t rs485HumE = 0xFFFE;
     uint16_t rs485TempF = 0xFFFE;
     uint16_t rs485HumF = 0xFFFE;
-    uint32_t accumuloTempE = 0;
-    uint32_t accumuloHumE = 0;
-    uint32_t accumuloTempF = 0;
-    uint32_t accumuloHumF = 0;
+    double accumuloTempE = 0;
+    double accumuloHumE = 0;
+    double accumuloTempF = 0;
+    double accumuloHumF = 0;
     uint8_t rs485risultati[11] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
     uint8_t rs485risultati2[11] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
     uint16_t shtTempA = 0xFF;
@@ -456,8 +461,8 @@ void loop() {
         for (int j = 0; j < 10; j++) {
           rs485(forkett, rs485risultati);
           if (rs485risultati[0] != 0xFF) {
-            accumuloTempE += ((rs485risultati[5] << 8) | rs485risultati[6]) / 10;
-            accumuloHumE += ((rs485risultati[3] << 8) | rs485risultati[4]) / 10;
+            accumuloTempE += ((rs485risultati[5] << 8) | rs485risultati[6]) /*  / 10 */;
+            accumuloHumE += ((rs485risultati[3] << 8) | rs485risultati[4]) /*  / 10 */;
           }
         }
         rs485TempE = accumuloTempE / 10;
@@ -488,8 +493,8 @@ void loop() {
         for (int j = 0; j < 10; j++) {
           rs485(forkett, rs485risultati2);
           if (rs485risultati2[0] != 0xFF) {
-            accumuloTempF += ((rs485risultati2[5] << 8) | rs485risultati2[6]) / 10;
-            accumuloHumF += ((rs485risultati2[3] << 8) | rs485risultati2[4]) / 10;
+            accumuloTempF += ((rs485risultati2[5] << 8) | rs485risultati2[6]) /*  / 10 */;
+            accumuloHumF += ((rs485risultati2[3] << 8) | rs485risultati2[4]) /*  / 10 */;
           }
         }
         rs485TempF = accumuloTempF / 10;
@@ -552,7 +557,7 @@ void loop() {
     /////////////////////////////////////
     // DA QUI INVIA I DATI VIA RADIO:
     /////////////////////////////////////
-    radio.begin(RADIO_BAUD, SERIAL_8N1, RXpin, TXpin);
+    radio.begin(!sigfoxLora ? RADIO_BAUD : LORA_BAUD, SERIAL_8N1, RXpin, TXpin);  // a seconda del modulo usato, c'è un baudrate diverso
     delay(100);
     if (!sigfoxLora) {
       uint8_t msgS[12];

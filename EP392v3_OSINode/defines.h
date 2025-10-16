@@ -1,5 +1,6 @@
 #define SERIAL_BAUD 115200
-#define RADIO_BAUD 1200
+#define RADIO_BAUD 9600  // per sigfox
+#define LORA_BAUD 1200   // per lora
 
 #define RXpin 11
 #define TXpin 10
