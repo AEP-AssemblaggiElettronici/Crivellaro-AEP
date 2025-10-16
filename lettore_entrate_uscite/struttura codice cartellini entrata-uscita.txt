@@ -1,0 +1,7 @@
+AEP_059_U003_Mario Rossi
+
+AEP			- intestazione identificativa
+059			- numero primo, se non è primo il codice non è valido
+U			- U o E per stabilire se è un codice di entrata o di uscita
+003			- ID dipendente nel database
+Mario Rossi	- Nome del dipendente da visualizzare

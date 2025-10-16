@@ -1,0 +1,7 @@
+LETTORE ENTRATE E USCITE AEP, COLLOCAZIONE DI OGNI FILE PER L'INSTALLAZIONE:
+
+entrateuscite.html 															-> su pc desktop, si connette al database del lettore e gestisce i dati dei dipendenti
+test_nodered_db_in_corso.json 									-> backup del software lato server di nodered, va sull'istanza noderded del raspberry pi
+struttura codice cartellini entrata-uscita.txt  -> promemoria su come va strutturato il qr-code sui cartellini di entrata/uscita
+lettore.py 																			-> versione headless del lettore, prima che si pensasse di utilizzare la versione con schermo integrato
+lettore_desktop.py 															-> script python da caricare sul raspberry dotato di schermo, legge i qr-code dei dipendenti, è la versione attuale

@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestione Dipendenti</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        form { margin-bottom: 20px; }
+        select, input, button { margin: 5px; }
+        table {
+            width: 50%;
+            margin: 10px auto;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid black;
+            padding: 8px;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Gestione Dipendenti</h2>
+
+    <!-- Form per aggiungere un dipendente -->
+    <form id="addEmployeeForm">
+        <input type="text" id="nome" placeholder="Nome" required>
+        <input type="text" id="cognome" placeholder="Cognome" required>
+        <button type="submit">Aggiungi Dipendente</button>
+    </form>
+
+    <!-- Selezione per eliminare un dipendente -->
+    <select id="employeeList"></select>
+    <button onclick="deleteEmployee()">Elimina Dipendente</button>
+
+    <!-- Visualizzazione dati del dipendente -->
+    <h3>Dati Dipendente</h3>
+    <div id="employeeDetails">
+        <p><strong>Seleziona un dipendente</strong></p>
+    </div>
+
+    <script>
+        const serverIp = "192.168.179.31"; // Sostituisci con il tuo IP
+
+        async function fetchEmployees() {
+            console.log("Fetching employees...");
+            const response = await fetch(`http://${serverIp}:1880/show`);
+            const employees = await response.json();
+
+            const select = document.getElementById("employeeList");
+            select.innerHTML = ""; 
+
+            employees.forEach(emp => {
+                const option = document.createElement("option");
+                option.value = emp.id + ";" + emp.nome + ";" + emp.cognome;
+                option.textContent = emp.id + " " + emp.nome + " " + emp.cognome;
+                select.appendChild(option);
+            });
+
+            if (employees.length > 0) {
+                showEmployeeDetails(employees[0].id, employees[0].nome, employees[0].cognome);
+            }
+        }
+
+        async function showEmployeeDetails(id, nome, cognome) {
+            console.log("Showing details for: " + nome + " " + cognome);
+            // const response = await fetch(`http://${serverIp}:1880/select?nome=${encodeURIComponent(nome)}&cognome=${encodeURIComponent(cognome)}`);
+            const response = await fetch(`http://${serverIp}:1880/select_id?id=${encodeURIComponent(id)}`);
+            const data = await response.json();
+
+            let html = `<p><strong>${nome} ${cognome}</strong></p>`;
+            if (data.length > 0) {
+                html += `
+                    <table>
+                        <tr>
+                            <th>Entrata</th>
+                            <th>Uscita</th>
+                        </tr>
+                `;
+                data.forEach(entry => {
+                    html += `
+                        <tr>
+                            <td>${entry.entrata}</td>
+                            <td>${entry.uscita}</td>
+                        </tr>
+                    `;
+                });
+                html += `</table>`;
+            } else {
+                html += "<p>Nessun orario registrato</p>";
+            }
+            document.getElementById("employeeDetails").innerHTML = html;
+        }
+
+        document.getElementById("addEmployeeForm").addEventListener("submit", async function (e) {
+            e.preventDefault();
+            let nome = document.getElementById("nome").value;
+            let cognome = document.getElementById("cognome").value;
+
+            await fetch(`http://${serverIp}:1880/add?nome=${encodeURIComponent(nome)}&cognome=${encodeURIComponent(cognome)}`);
+            fetchEmployees();
+        });
+
+        async function deleteEmployee() {
+            const select = document.getElementById("employeeList");
+            if (select.value) {
+                const [id, nome, cognome] = select.value.split(";");
+                await fetch(`http://${serverIp}:1880/delete?id=${encodeURIComponent(id)}`);
+                fetchEmployees();
+            }
+        }
+
+        // Aggiorna i dettagli del dipendente quando cambia la selezione
+        document.getElementById("employeeList").addEventListener("change", function () {
+            const [id, nome, cognome] = this.value.split(";");
+            showEmployeeDetails(id, nome, cognome);
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            fetchEmployees();
+        });
+    </script>
+
+</body>
+</html>

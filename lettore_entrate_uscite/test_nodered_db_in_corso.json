@@ -1,0 +1,652 @@
+[
+    {
+        "id": "db28df2e9c84f273",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "a4bead3fb80338e2",
+        "type": "group",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "style": {
+            "stroke": "#000000",
+            "fill": "#bfdbef",
+            "label": true,
+            "color": "#000000"
+        },
+        "nodes": [
+            "98d2a2d14529539a",
+            "5953f0e455cd66a3",
+            "5214240c3efc376b",
+            "3fda5bfc65049265",
+            "6fc39f715c515853",
+            "56ac4cdd7cf8ddb5",
+            "effdc68d520fc98e",
+            "b103f46ab7490a8b",
+            "71369b9721422c5d"
+        ],
+        "x": 34,
+        "y": 499,
+        "w": 1092,
+        "h": 202
+    },
+    {
+        "id": "29cae549aa9e3d45",
+        "type": "group",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "style": {
+            "label": true,
+            "color": "#000000",
+            "fill": "#ffefbf"
+        },
+        "nodes": [
+            "129b9d9718edca9e",
+            "5c0ba9e7135951e3",
+            "f8372d236c33d592",
+            "f5995c6e9c15b1dd",
+            "77a5c41ae631405c",
+            "9aa113d907274fda"
+        ],
+        "x": 454,
+        "y": 19,
+        "w": 412,
+        "h": 202
+    },
+    {
+        "id": "23a72404e5cd48a8",
+        "type": "sqlite",
+        "z": "db28df2e9c84f273",
+        "mydb": "6733f864a81c6eb2",
+        "sqlquery": "msg.topic",
+        "sql": "",
+        "name": "",
+        "x": 1170,
+        "y": 320,
+        "wires": [
+            [
+                "4bbf459117932619"
+            ]
+        ]
+    },
+    {
+        "id": "b5ac6aea9fcb9b5b",
+        "type": "http in",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "url": "/show",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 100,
+        "y": 220,
+        "wires": [
+            [
+                "a67c980802b34540"
+            ]
+        ]
+    },
+    {
+        "id": "5c0ba9e7135951e3",
+        "type": "http in",
+        "z": "db28df2e9c84f273",
+        "g": "29cae549aa9e3d45",
+        "name": "",
+        "url": "/add",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 540,
+        "y": 100,
+        "wires": [
+            [
+                "f8372d236c33d592"
+            ]
+        ]
+    },
+    {
+        "id": "f8372d236c33d592",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "g": "29cae549aa9e3d45",
+        "name": "Aggiungi dipendente",
+        "func": "let caratteriProibiti = /['\";]/g;\nlet nome = caratteriProibiti.test(msg.payload.nome) ? msg.payload.nome.replace(caratteriProibiti, \" \") : msg.payload.nome;\nlet cognome = caratteriProibiti.test(msg.payload.cognome) ? msg.payload.cognome.replace(caratteriProibiti, \" \") : msg.payload.cognome;\nlet query = \"INSERT INTO dipendenti (nome, cognome) VALUES ('\" + nome + \"', '\" + cognome + \"');\";\n\nreturn { \n    \"topic\": query,\n    \"req\": msg.req,\n    \"res\": msg.res\n    };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 720,
+        "y": 100,
+        "wires": [
+            [
+                "23a72404e5cd48a8"
+            ]
+        ]
+    },
+    {
+        "id": "a67c980802b34540",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "name": "Mostra tabella",
+        "func": "return {\n    \"topic\": \"SELECT * FROM dipendenti;\",\n    \"req\": msg.req,\n    \"res\": msg.res\n};",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 260,
+        "y": 220,
+        "wires": [
+            [
+                "23a72404e5cd48a8"
+            ]
+        ]
+    },
+    {
+        "id": "f5995c6e9c15b1dd",
+        "type": "comment",
+        "z": "db28df2e9c84f273",
+        "g": "29cae549aa9e3d45",
+        "name": "/add?nome=\"mario\"&cognome=\"rossi\"",
+        "info": "",
+        "x": 630,
+        "y": 60,
+        "wires": []
+    },
+    {
+        "id": "3a7d5278b01a801e",
+        "type": "comment",
+        "z": "db28df2e9c84f273",
+        "name": "/show (e mostra le tabelle)",
+        "info": "",
+        "x": 150,
+        "y": 180,
+        "wires": []
+    },
+    {
+        "id": "77a5c41ae631405c",
+        "type": "comment",
+        "z": "db28df2e9c84f273",
+        "g": "29cae549aa9e3d45",
+        "name": "/delete?nome=\"mario\"&cognome=\"rossi\"",
+        "info": "",
+        "x": 640,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "9aa113d907274fda",
+        "type": "http in",
+        "z": "db28df2e9c84f273",
+        "g": "29cae549aa9e3d45",
+        "name": "",
+        "url": "/delete",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 550,
+        "y": 180,
+        "wires": [
+            [
+                "129b9d9718edca9e"
+            ]
+        ]
+    },
+    {
+        "id": "129b9d9718edca9e",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "g": "29cae549aa9e3d45",
+        "name": "Rimuovi dipendente",
+        "func": "let caratteriProibiti = /['\";]/g;\nlet id = caratteriProibiti.test(msg.payload.id) ? msg.payload.id.replace(caratteriProibiti, \" \") : msg.payload.id;\nlet query = \"DELETE FROM dipendenti WHERE id = '\" + id + \"';\";\n\nreturn { \n    \"topic\": query,\n    \"req\": msg.req,\n    \"res\": msg.res\n    };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 740,
+        "y": 180,
+        "wires": [
+            [
+                "23a72404e5cd48a8"
+            ]
+        ]
+    },
+    {
+        "id": "5f1be45bc8d01152",
+        "type": "comment",
+        "z": "db28df2e9c84f273",
+        "name": "/select?nome=\"mario\"&cognome=\"rossi\"",
+        "info": "",
+        "x": 200,
+        "y": 260,
+        "wires": []
+    },
+    {
+        "id": "f7a256cee8ce1497",
+        "type": "http in",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "url": "/select",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 110,
+        "y": 300,
+        "wires": [
+            [
+                "aa973343cb55b978"
+            ]
+        ]
+    },
+    {
+        "id": "aa973343cb55b978",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "name": "Mostra dipendente",
+        "func": "let caratteriProibiti = /['\";]/g;\nlet nome = caratteriProibiti.test(msg.payload.nome) ? msg.payload.nome.replace(caratteriProibiti, \" \") : msg.payload.nome;\nlet cognome = caratteriProibiti.test(msg.payload.cognome) ? msg.payload.cognome.replace(caratteriProibiti, \" \") : msg.payload.cognome;\nlet query = \"SELECT * FROM dipendenti WHERE nome = '\" + nome + \"' AND cognome = '\" + cognome + \"';\";\n\nreturn { \n    \"topic\": query,\n    \"req\": msg.req,\n    \"res\": msg.res\n    };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 290,
+        "y": 300,
+        "wires": [
+            [
+                "23a72404e5cd48a8"
+            ]
+        ]
+    },
+    {
+        "id": "4bbf459117932619",
+        "type": "http response",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "statusCode": "",
+        "headers": {},
+        "x": 1330,
+        "y": 440,
+        "wires": []
+    },
+    {
+        "id": "28365802dd690f25",
+        "type": "comment",
+        "z": "db28df2e9c84f273",
+        "name": "/select_id?id=\"codice dipendente\"",
+        "info": "",
+        "x": 170,
+        "y": 340,
+        "wires": []
+    },
+    {
+        "id": "8af5a3db2fcb894b",
+        "type": "http in",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "url": "/select_id",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 110,
+        "y": 380,
+        "wires": [
+            [
+                "bdbd785565e64e27"
+            ]
+        ]
+    },
+    {
+        "id": "bdbd785565e64e27",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "name": "Seleziona orari da ID dipendente",
+        "func": "let caratteriProibiti = /['\";]/g;\nlet id = caratteriProibiti.test(msg.payload.id) ? msg.payload.id.replace(caratteriProibiti, \" \") : msg.payload.id;\nlet query = \"SELECT * FROM orari WHERE id_dipendente = '\" + id + \"';\";\n\nreturn { \n    \"topic\": query,\n    \"req\": msg.req,\n    \"res\": msg.res\n    };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 340,
+        "y": 380,
+        "wires": [
+            [
+                "23a72404e5cd48a8"
+            ]
+        ]
+    },
+    {
+        "id": "98d2a2d14529539a",
+        "type": "comment",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "name": "/stamp?id=\"codice dipendente\"",
+        "info": "",
+        "x": 190,
+        "y": 540,
+        "wires": []
+    },
+    {
+        "id": "5953f0e455cd66a3",
+        "type": "http in",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "name": "",
+        "url": "/stamp",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 130,
+        "y": 580,
+        "wires": [
+            [
+                "3fda5bfc65049265"
+            ]
+        ]
+    },
+    {
+        "id": "5214240c3efc376b",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "name": "Registra entrata",
+        "func": "let query = \"INSERT INTO orari (id_dipendente, entrata) VALUES (\" + msg.id + \", datetime('now', 'localtime'));\" \n\nreturn { \n    \"topic\": query,\n    \"req\": msg.req,\n    \"res\": msg.res\n    };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1020,
+        "y": 620,
+        "wires": [
+            [
+                "23a72404e5cd48a8"
+            ]
+        ]
+    },
+    {
+        "id": "4b61b5153054fc2c",
+        "type": "comment",
+        "z": "db28df2e9c84f273",
+        "name": "/selectName?id=\"23\"",
+        "info": "",
+        "x": 130,
+        "y": 420,
+        "wires": []
+    },
+    {
+        "id": "5dc9eca67b72652c",
+        "type": "http in",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "url": "/selectName",
+        "method": "get",
+        "upload": false,
+        "swaggerDoc": "",
+        "x": 120,
+        "y": 460,
+        "wires": [
+            [
+                "39e93ae9a3e72c45"
+            ]
+        ]
+    },
+    {
+        "id": "39e93ae9a3e72c45",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "name": "Mostra dipendente dal suo ID",
+        "func": "let caratteriProibiti = /['\";]/g;\nlet id = caratteriProibiti.test(msg.payload.id) ? msg.payload.id.replace(caratteriProibiti, \" \") : msg.payload.id;\nlet query = \"SELECT * FROM dipendenti WHERE id = '\" + id + \"';\";\n\nreturn { \n    \"topic\": query,\n    \"req\": msg.req,\n    \"res\": msg.res\n    };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 340,
+        "y": 460,
+        "wires": [
+            [
+                "23a72404e5cd48a8"
+            ]
+        ]
+    },
+    {
+        "id": "ea3e7e8cdad78ee1",
+        "type": "catch",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "scope": [
+            "23a72404e5cd48a8",
+            "56ac4cdd7cf8ddb5"
+        ],
+        "uncaught": false,
+        "x": 690,
+        "y": 740,
+        "wires": [
+            [
+                "6f3696bb41bd2cd7"
+            ]
+        ]
+    },
+    {
+        "id": "6f3696bb41bd2cd7",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "name": "Messaggio d'errore ID non valido nel database",
+        "func": "msg.payload = \"ERRORE\"\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 940,
+        "y": 740,
+        "wires": [
+            [
+                "4bbf459117932619"
+            ]
+        ]
+    },
+    {
+        "id": "3fda5bfc65049265",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "name": "Controlla se c'è gia un orario di entrata",
+        "func": "let caratteriProibiti = /['\";]/g;\nlet id = caratteriProibiti.test(msg.payload.id) ? msg.payload.id.replace(caratteriProibiti, \" \") : msg.payload.id;\nlet entrataUscita = id[0];\nid = parseInt(id.substring(1, 4));\n\nlet query = entrataUscita === \"E\" \n? \"SELECT * FROM orari WHERE id_dipendente = '\" + id + \"' AND USCITA IS NULL;\"\n: \"UPDATE orari SET uscita = datetime('now', 'localtime') WHERE id_dipendente = \" + id + \" AND uscita IS NULL;\";\n\nreturn { \n    \"topic\": query,\n    \"id\": id,\n    \"req\": msg.req,\n    \"res\": msg.res\n    };",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 580,
+        "wires": [
+            [
+                "6fc39f715c515853"
+            ]
+        ]
+    },
+    {
+        "id": "6fc39f715c515853",
+        "type": "switch",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "name": "Discrimina se è un codice di entrata o di uscita",
+        "property": "topic",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "cont",
+                "v": "UPDATE orari SET uscita = datetime('now', 'localtime') WHERE id_dipendente",
+                "vt": "str"
+            },
+            {
+                "t": "cont",
+                "v": "SELECT * FROM orari WHERE id",
+                "vt": "str"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 720,
+        "y": 580,
+        "wires": [
+            [
+                "23a72404e5cd48a8"
+            ],
+            [
+                "56ac4cdd7cf8ddb5"
+            ]
+        ]
+    },
+    {
+        "id": "56ac4cdd7cf8ddb5",
+        "type": "sqlite",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "mydb": "6733f864a81c6eb2",
+        "sqlquery": "msg.topic",
+        "sql": "",
+        "name": "",
+        "x": 190,
+        "y": 640,
+        "wires": [
+            [
+                "b103f46ab7490a8b"
+            ]
+        ]
+    },
+    {
+        "id": "effdc68d520fc98e",
+        "type": "switch",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "name": "",
+        "property": "payload",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "1",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "0",
+                "vt": "str"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 870,
+        "y": 640,
+        "wires": [
+            [
+                "5214240c3efc376b"
+            ],
+            [
+                "71369b9721422c5d"
+            ]
+        ]
+    },
+    {
+        "id": "b103f46ab7490a8b",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "name": "Se è un array vuoto, procedi con l'inserimento dell'orario di entrata",
+        "func": "if (Array.isArray(msg.payload) && msg.payload.length === 0) {\n    msg.payload = 1;\n} else {\n    msg.payload = 0;\n}\nreturn {\n    \"payload\": msg.payload,\n    \"id\": msg.id,\n    \"req\": msg.req,\n    \"res\": msg.res\n}",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 560,
+        "y": 640,
+        "wires": [
+            [
+                "effdc68d520fc98e"
+            ]
+        ]
+    },
+    {
+        "id": "71369b9721422c5d",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "g": "a4bead3fb80338e2",
+        "name": "Lancia errore!",
+        "func": "throw new Error",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1020,
+        "y": 660,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "124a0b6566d25f25",
+        "type": "catch",
+        "z": "db28df2e9c84f273",
+        "name": "",
+        "scope": [
+            "71369b9721422c5d"
+        ],
+        "uncaught": false,
+        "x": 750,
+        "y": 780,
+        "wires": [
+            [
+                "553c4f5debe2e9b9"
+            ]
+        ]
+    },
+    {
+        "id": "553c4f5debe2e9b9",
+        "type": "function",
+        "z": "db28df2e9c84f273",
+        "name": "Messaggio d'errore entrata gia registrata",
+        "func": "msg.payload = \"ERRORE ENTRATA\"\nreturn msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 980,
+        "y": 780,
+        "wires": [
+            [
+                "4bbf459117932619"
+            ]
+        ]
+    },
+    {
+        "id": "6733f864a81c6eb2",
+        "type": "sqlitedb",
+        "db": "/home/pi/entrateuscite.db",
+        "mode": "RWC"
+    }
+]

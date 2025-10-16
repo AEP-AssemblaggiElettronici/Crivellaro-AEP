@@ -1,0 +1,247 @@
+# depslib dependency file v1.0
+1746601647 source:/home/micioide/FLTK_Mixer/main.cpp
+	<FL/Fl.H>
+	<FL/Fl_Window.H>
+	<FL/Fl_Box.H>
+	<FL/Fl_Button.H>
+	<FL/Fl_File_Browser.H>
+	<FL/Fl_Native_File_Chooser.H>
+	<FL/fl_ask.H>
+	"bottone_mixer.h"
+	"bottone_banco.h"
+	<iostream>
+	<bitset>
+	<wiringPi.h>
+	<thread>
+	<time.h>
+	<fstream>
+	<string>
+
+1739273594 /home/micioide/FLTK_Mixer/bottone_mixer.h
+	<Fl/Fl_Box.H>
+
+1739285489 source:/home/micioide/FLTK_Mixer/bottone_mixer.cpp
+	"bottone_mixer.h"
+
+1662607008 /usr/include/Fl/Fl_Box.H
+	"Fl_Widget.H"
+
+1662607008 /usr/include/Fl/Fl_Widget.H
+	"Enumerations.H"
+	<stdint.h>
+	<stddef.h>
+
+1662607008 /usr/include/Fl/Enumerations.H
+	<FL/abi-version.h>
+	"Fl_Export.H"
+	"fl_types.h"
+
+1662607008 /usr/include/FL/abi-version.h
+
+1662607008 /usr/include/Fl/Fl_Export.H
+
+1662607008 /usr/include/Fl/fl_types.h
+
+1730897328 /usr/include/stdint.h
+	<bits/libc-header-start.h>
+	<bits/types.h>
+	<bits/wchar.h>
+	<bits/wordsize.h>
+	<bits/stdint-intn.h>
+	<bits/stdint-uintn.h>
+
+1662607008 /usr/include/FL/Fl.H
+	<FL/Fl_Export.H>
+	<FL/Fl_Cairo.H>
+	"fl_utf8.h"
+	"Enumerations.H"
+	<stdio.h>
+	<FL/Fl.H>
+	<FL/Fl_Window.H>
+
+1662607008 /usr/include/FL/Fl_Export.H
+
+1662607008 /usr/include/FL/Fl_Cairo.H
+	<FL/Fl_Export.H>
+	<cairo.h>
+
+1662607008 /usr/include/FL/fl_utf8.h
+	"Fl_Export.H"
+	"fl_types.h"
+	<stdio.h>
+	<string.h>
+	<stdlib.h>
+	<sys/types.h>
+	<sys/stat.h>
+	<locale.h>
+	<ctype.h>
+	<wchar.h>
+	<sys/stat.h>
+	<sys/types.h>
+	<sys/stat.h>
+	<X11/Xlocale.h>
+	<X11/Xlib.h>
+	<locale.h>
+
+1662607008 /usr/include/FL/fl_types.h
+
+1730897328 /usr/include/stdio.h
+	<bits/libc-header-start.h>
+	<stddef.h>
+	<stdarg.h>
+	<bits/types.h>
+	<bits/types/__fpos_t.h>
+	<bits/types/__fpos64_t.h>
+	<bits/types/__FILE.h>
+	<bits/types/FILE.h>
+	<bits/types/struct_FILE.h>
+	<bits/types/cookie_io_functions_t.h>
+	<stdarg.h>
+	<bits/stdio_lim.h>
+	<bits/floatn.h>
+	<bits/getopt_posix.h>
+	<bits/stdio2-decl.h>
+	<bits/stdio-ldbl.h>
+	<bits/stdio.h>
+	<bits/stdio2.h>
+
+1730897328 /usr/include/string.h
+	<bits/libc-header-start.h>
+	<stddef.h>
+	<bits/types/locale_t.h>
+	<strings.h>
+	<bits/string_fortified.h>
+
+1730897328 /usr/include/strings.h
+	<features.h>
+	<stddef.h>
+	<bits/types/locale_t.h>
+	<bits/strings_fortified.h>
+
+1730897328 /usr/include/features.h
+	<features-time64.h>
+	<stdc-predef.h>
+	<sys/cdefs.h>
+	<gnu/stubs.h>
+
+1730897328 /usr/include/features-time64.h
+	<bits/wordsize.h>
+	<bits/timesize.h>
+
+1730897328 /usr/include/stdc-predef.h
+
+1730897328 /usr/include/stdlib.h
+	<bits/libc-header-start.h>
+	<stddef.h>
+	<bits/waitflags.h>
+	<bits/waitstatus.h>
+	<bits/floatn.h>
+	<bits/types/locale_t.h>
+	<sys/types.h>
+	<alloca.h>
+	<bits/stdlib-bsearch.h>
+	<bits/stdlib-float.h>
+	<bits/stdlib.h>
+	<bits/floatn.h>
+	<bits/stdlib-ldbl.h>
+
+1730897328 /usr/include/alloca.h
+	<features.h>
+	<stddef.h>
+
+1730897328 /usr/include/locale.h
+	<features.h>
+	<stddef.h>
+	<bits/locale.h>
+	<bits/types/locale_t.h>
+
+1730897328 /usr/include/ctype.h
+	<features.h>
+	<bits/types.h>
+	<bits/endian.h>
+	<bits/types/locale_t.h>
+
+1730897328 /usr/include/wchar.h
+	<bits/libc-header-start.h>
+	<bits/floatn.h>
+	<stddef.h>
+	<stdarg.h>
+	<bits/wchar.h>
+	<bits/types/wint_t.h>
+	<bits/types/mbstate_t.h>
+	<bits/types/__FILE.h>
+	<bits/types/FILE.h>
+	<bits/types/locale_t.h>
+	<bits/wctype-wchar.h>
+	<bits/wchar2-decl.h>
+	<bits/wchar-ldbl.h>
+	<bits/wchar2.h>
+
+1696323152 /usr/include/X11/Xlocale.h
+	<X11/Xfuncproto.h>
+	<X11/Xosdefs.h>
+	<locale.h>
+
+1650609771 /usr/include/X11/Xfuncproto.h
+
+1650609771 /usr/include/X11/Xosdefs.h
+
+1696323152 /usr/include/X11/Xlib.h
+	<sys/types.h>
+	<stdint.h>
+	<X11/X.h>
+	<X11/Xfuncproto.h>
+	<X11/Xosdefs.h>
+	<stddef.h>
+	<stdlib.h>
+
+1650609771 /usr/include/X11/X.h
+	<X11/Xmd.h>
+
+1650609771 /usr/include/X11/Xmd.h
+	<sys/isa_defs.h>
+
+1662607008 /usr/include/FL/Enumerations.H
+	<FL/abi-version.h>
+	"Fl_Export.H"
+	"fl_types.h"
+
+1662607008 /usr/include/FL/Fl_Window.H
+	<windows.h>
+	"Fl_Group.H"
+	"Fl_Bitmap.H"
+	<stdlib.h>
+
+1662607008 /usr/include/FL/Fl_Group.H
+	"Fl_Widget.H"
+
+1662607008 /usr/include/FL/Fl_Widget.H
+	"Enumerations.H"
+	<stdint.h>
+	<stddef.h>
+
+1662607008 /usr/include/FL/Fl_Bitmap.H
+	"Fl_Image.H"
+
+1662607008 /usr/include/FL/Fl_Image.H
+	"Enumerations.H"
+	<stdlib.h>
+
+1662607008 /usr/include/FL/Fl_Box.H
+	"Fl_Widget.H"
+
+1739184670 source:/home/micioide/FLTK_Mixer/transmissions.cpp
+	"transmissions.h"
+	<wiringPi.h>
+
+1739184779 /home/micioide/FLTK_Mixer/transmissions.h
+
+1739178533 /usr/local/include/wiringPi.h
+
+1740472489 source:/home/micioide/FLTK_Mixer/bottone_banco.cpp
+	"bottone_banco.h"
+
+1739367850 /home/micioide/FLTK_Mixer/bottone_banco.h
+	<Fl/Fl_Button.H>
+	"bottone_mixer.h"
+
