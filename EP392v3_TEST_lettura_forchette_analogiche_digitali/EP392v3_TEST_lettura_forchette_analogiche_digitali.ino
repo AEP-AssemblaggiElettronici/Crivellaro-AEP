@@ -142,8 +142,8 @@ void loop() {
   digitalWrite(BOOST_SHTDWN, 0);
   delay(1000);
 
-  digitalWrite(RS485_DE, 0);
+/*   digitalWrite(RS485_DE, 0);
   digitalWrite(RS485_RE, 1);
   esp_sleep_enable_timer_wakeup(5ULL * 1000000ULL);
-  esp_light_sleep_start();
+  esp_light_sleep_start(); */
 }

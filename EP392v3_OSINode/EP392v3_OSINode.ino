@@ -7,8 +7,6 @@
   - visto che sono state tolte 2 resistenze, verificare che le forchette rs485 funzionino ancora bene
 */
 
-/* #include "esp_wifi.h"
-#include "esp_bt.h" */
 #include "FS.h"
 #include "defines.h"
 #include "SPIFFS.h"
@@ -59,9 +57,6 @@ void sendMessage(uint8_t msg[], int size);
 void IRAM_ATTR pluvio_ISR();
 
 void setup() {
-  /*   esp_wifi_stop();  // disattiviamo il wifi per sicurezza, anche se qui su non lo usiamo
-  esp_bt_controller_disable();
-  btStop();  // disattiviamo il bluetooth per sicurezza, anche se qui non lo usiamo */
   for (int i = 0; i < 7; i++) {
     pinMode(unusedPins[i], INPUT);
     digitalWrite(unusedPins[i], 0);
@@ -326,7 +321,6 @@ void loop() {
 
       pinMode(PIN_SDA, OUTPUT);
       pinMode(PIN_SCL, OUTPUT);
-      pinMode(TXpin, OUTPUT);
       pinMode(PIN_BATTERY, INPUT);
       pinMode(BOOST_EN, OUTPUT);
       pinMode(BOOST_SHTDWN, OUTPUT);
@@ -557,6 +551,9 @@ void loop() {
     /////////////////////////////////////
     // DA QUI INVIA I DATI VIA RADIO:
     /////////////////////////////////////
+    radio.flush();
+    radio.end();
+    delay(300);
     radio.begin(!sigfoxLora ? RADIO_BAUD : LORA_BAUD, SERIAL_8N1, RXpin, TXpin);  // a seconda del modulo usato, c'è un baudrate diverso
     delay(100);
     if (!sigfoxLora) {
@@ -737,9 +734,8 @@ void loop() {
     pinMode(RS485_RX_2, INPUT);
     digitalWrite(RS485_TX_2, 0);
     pinMode(RS485_RX_2, INPUT);
-    pinMode(RXpin, INPUT);
-    digitalWrite(TXpin, 0);
-    pinMode(TXpin, INPUT);
+    /*     pinMode(RXpin, INPUT);
+    pinMode(TXpin, INPUT); */
     digitalWrite(PIN_FORK_C, 0);
     pinMode(PIN_FORK_C, INPUT);
     digitalWrite(PIN_FORK_D, 0);

@@ -2,7 +2,7 @@
 // Copyright 2016-2025 Hristo Gochkov, Mathieu Carbou, Emil Muratov
 
 #include "AsyncWebSocket.h"
-#include "Arduino.h"
+#include "AsyncWebServerLogging.h"
 
 #include <cstring>
 
@@ -68,9 +68,7 @@ size_t webSocketSendFrame(AsyncClient *client, bool final, uint8_t opcode, bool 
 
   uint8_t *buf = (uint8_t *)malloc(headLen);
   if (buf == NULL) {
-#ifdef ESP32
-    log_e("Failed to allocate");
-#endif
+    async_ws_log_e("Failed to allocate");
     client->abort();
     return 0;
   }
@@ -120,6 +118,11 @@ size_t webSocketSendFrame(AsyncClient *client, bool final, uint8_t opcode, bool 
   return len;
 }
 
+size_t AsyncWebSocketControl::send(AsyncClient *client) {
+  _finished = true;
+  return webSocketSendFrame(client, true, _opcode & 0x0F, _mask, _data, _len);
+}
+
 /*
  *    AsyncWebSocketMessageBuffer
  */
@@ -145,65 +148,6 @@ bool AsyncWebSocketMessageBuffer::reserve(size_t size) {
   _buffer->reserve(size);
   return _buffer->capacity() >= size;
 }
-
-/*
- * Control Frame
- */
-
-class AsyncWebSocketControl {
-private:
-  uint8_t _opcode;
-  uint8_t *_data;
-  size_t _len;
-  bool _mask;
-  bool _finished;
-
-public:
-  AsyncWebSocketControl(uint8_t opcode, const uint8_t *data = NULL, size_t len = 0, bool mask = false)
-    : _opcode(opcode), _len(len), _mask(len && mask), _finished(false) {
-    if (data == NULL) {
-      _len = 0;
-    }
-    if (_len) {
-      if (_len > 125) {
-        _len = 125;
-      }
-
-      _data = (uint8_t *)malloc(_len);
-
-      if (_data == NULL) {
-#ifdef ESP32
-        log_e("Failed to allocate");
-#endif
-        _len = 0;
-      } else {
-        memcpy(_data, data, len);
-      }
-    } else {
-      _data = NULL;
-    }
-  }
-
-  ~AsyncWebSocketControl() {
-    if (_data != NULL) {
-      free(_data);
-    }
-  }
-
-  bool finished() const {
-    return _finished;
-  }
-  uint8_t opcode() {
-    return _opcode;
-  }
-  uint8_t len() {
-    return _len + 2;
-  }
-  size_t send(AsyncClient *client) {
-    _finished = true;
-    return webSocketSendFrame(client, true, _opcode & 0x0F, _mask, _data, _len);
-  }
-};
 
 /*
  * AsyncWebSocketMessage Message
@@ -487,18 +431,10 @@ bool AsyncWebSocketClient::_queueMessage(AsyncWebSocketSharedBuffer buffer, uint
         _client->close(true);
       }
 
-#ifdef ESP8266
-      ets_printf("AsyncWebSocketClient::_queueMessage: Too many messages queued: closing connection\n");
-#elif defined(ESP32)
-      log_e("Too many messages queued: closing connection");
-#endif
+      async_ws_log_e("Too many messages queued: closing connection");
 
     } else {
-#ifdef ESP8266
-      ets_printf("AsyncWebSocketClient::_queueMessage: Too many messages queued: discarding new message\n");
-#elif defined(ESP32)
-      log_e("Too many messages queued: discarding new message");
-#endif
+      async_ws_log_e("Too many messages queued: discarding new message");
     }
 
     return false;
@@ -540,10 +476,8 @@ void AsyncWebSocketClient::close(uint16_t code, const char *message) {
       free(buf);
       return;
     } else {
-#ifdef ESP32
-      log_e("Failed to allocate");
+      async_ws_log_e("Failed to allocate");
       _client->abort();
-#endif
     }
   }
   _queueControl(WS_DISCONNECT);
@@ -585,9 +519,9 @@ void AsyncWebSocketClient::_onData(void *pbuf, size_t plen) {
       _pinfo.masked = (fdata[1] & 0x80) != 0;
       _pinfo.len = fdata[1] & 0x7F;
 
-      // log_d("WS[%" PRIu32 "]: _onData: %" PRIu32, _clientId, plen);
-      // log_d("WS[%" PRIu32 "]: _status = %" PRIu32, _clientId, _status);
-      // log_d("WS[%" PRIu32 "]: _pinfo: index: %" PRIu64 ", final: %" PRIu8 ", opcode: %" PRIu8 ", masked: %" PRIu8 ", len: %" PRIu64, _clientId, _pinfo.index, _pinfo.final, _pinfo.opcode, _pinfo.masked, _pinfo.len);
+      // async_ws_log_d("WS[%" PRIu32 "]: _onData: %" PRIu32, _clientId, plen);
+      // async_ws_log_d("WS[%" PRIu32 "]: _status = %" PRIu32, _clientId, _status);
+      // async_ws_log_d("WS[%" PRIu32 "]: _pinfo: index: %" PRIu64 ", final: %" PRIu8 ", opcode: %" PRIu8 ", masked: %" PRIu8 ", len: %" PRIu64, _clientId, _pinfo.index, _pinfo.final, _pinfo.opcode, _pinfo.masked, _pinfo.len);
 
       data += 2;
       plen -= 2;
@@ -1284,9 +1218,7 @@ void AsyncWebSocket::handleRequest(AsyncWebServerRequest *request) {
   const AsyncWebHeader *key = request->getHeader(WS_STR_KEY);
   AsyncWebServerResponse *response = new AsyncWebSocketResponse(key->value(), this);
   if (response == NULL) {
-#ifdef ESP32
-    log_e("Failed to allocate");
-#endif
+    async_ws_log_e("Failed to allocate");
     request->abort();
     return;
   }
@@ -1324,7 +1256,7 @@ AsyncWebSocketResponse::AsyncWebSocketResponse(const String &key, AsyncWebSocket
 #else
   String k;
   if (!k.reserve(key.length() + WS_STR_UUID_LEN)) {
-    log_e("Failed to allocate");
+    async_ws_log_e("Failed to allocate");
     return;
   }
   k.concat(key);
