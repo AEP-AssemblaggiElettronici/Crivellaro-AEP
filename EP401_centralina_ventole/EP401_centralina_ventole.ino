@@ -4,8 +4,8 @@
  * AUTHOR: E.Pacenti
  * TARGET: ESP32-S3
  * 
- * VERSION: 3.0.4
- * DATE: 2025-11-03
+ * VERSION: 3.0.2
+ * DATE: 2025-11-05
  * 
  * DESCRIPTION:
  * Sistema di controllo per 6 ventole EBM-Papst R3G133-RA01-20 con WebServer
@@ -14,6 +14,8 @@
  * - 2 sensori PT100 per temperatura (PT101, PT102)
  * - 2 ingressi digitali (pressostato + crepuscolare)
  * - 3 uscite digitali (LED allarme + 2 liberi)
+ * - 1 LED indicatore WiFi (LED3)
+ * - 1 pulsante attivazione WiFi on-demand
  * - WebServer WiFi Access Point per controllo remoto
  * - Controllo automatico temperatura con isteresi
  * - Modalità crepuscolare con riduzione velocità
@@ -22,14 +24,24 @@
  * - MCU: ESP32-S3-WROOM
  * - Ventole: EBM-Papst R3G133-RA01-20 (EC, 230VAC)
  * - PWM: Software, 500Hz, risoluzione 100 step (INVERTITO), minimo 30%
- * - PT100: ADC interno, range 0-60°C
- * - WiFi: Access Point "EP401-VENTOLE" - IP: 192.168.4.1
+ * - PT100: ADC interno, partitore con R_REF=172Ω, range 0-60°C
+ * - WiFi: Access Point on-demand "EP401-FAN_CTRL" - IP: 192.100.100.1
+ * - WiFi Button: Pin 7 (attivazione/mantenimento)
+ * - WiFi LED: Pin 6 (indicatore stato)
  * 
  * CHANGELOG:
- * v3.0.4 (2025-11-03) - IP Statico Access Point
- *   + Configurato IP statico Access Point: 192.100.100.1
- *   + Gateway: 192.100.100.1, Subnet: 255.255.255.0
- *   ! Correzione lettura PT100 (divisione /10)
+ * v3.0.2 (2025-11-05) - WiFi On-Demand con timeout automatico
+ *   + Aggiunto pulsante WiFi su pin 7 per attivazione on-demand
+ *   + Aggiunto LED3 su pin 6 come indicatore stato WiFi
+ *   + WiFi si disabilita automaticamente dopo 5 minuti senza client connessi
+ *   + Stati LED: OFF=WiFi spento, LAMPEGGIO=avvio, FISSO=attivo
+ *   * CHANGED: WiFi non parte automaticamente all'avvio
+ *   * CHANGED: Pressione pulsante durante WiFi attivo resetta timeout
+ * v3.0.1 (2025-11-03) - Calibrazione PT100 e miglioramenti rete
+ *   * FIXED: R_REF corretto a 172.0Ω (era 1000.0Ω) per lettura accurata PT100
+ *   + Aggiunta stampa periodica temperature su seriale
+ *   * CHANGED: IP Access Point fisso a 192.100.100.1
+ *   * CHANGED: SSID Access Point: "EP401-FAN_CTRL"
  * v3.0.0 (2025-10-31) - WebServer e Controllo Automatico
  *   + Aggiunto WiFi Access Point e WebServer
  *   + Interfaccia web responsive per monitoraggio e controllo
@@ -76,12 +88,14 @@
 // Digital Input
 #define PRESSURE_PIN 36
 #define TWILIGHT_PIN 35
+#define WIFI_BUTTON_PIN 7
 
 // Digital Output
 #define LED_ALARM_PIN 3
 #define OUTPUT_1_PIN 21
 #define OUTPUT_2_PIN 47
 #define OUTPUT_3_PIN 48
+#define LED3_PIN 6
 
 // ============================================================================
 // CONFIGURAZIONE SISTEMA
@@ -106,9 +120,10 @@
 #define NUM_PT100 2
 #define PT100_SAMPLES 10
 #define PT100_READ_TIME 5000
+#define PT100_PRINT_TIME 10000
 #define ADC_RESOLUTION 4095.0
 #define ADC_VREF 3.3
-#define R_REF 1000.0
+#define R_REF 172.0
 #define PT100_R0 100.0
 #define PT100_ALPHA 0.00385
 
@@ -123,11 +138,28 @@
 // WiFi
 #define WIFI_SSID "EP401-FAN_CTRL"
 #define WIFI_PASSWORD "ep401admin"
-#define STATIC_IP "192.100.100.1"
 #define WIFI_CHANNEL 1
+#define WIFI_TIMEOUT_MS 300000
+#define CLIENT_CHECK_INTERVAL 10000
+#define WIFI_LED_BLINK_TIME 500
+
+// Network - IP Fisso
+#define WIFI_IP_ADDR 192, 100, 100, 1
+#define WIFI_GATEWAY 192, 100, 100, 1
+#define WIFI_SUBNET 255, 255, 255, 0
 
 // WebServer
 #define WEB_UPDATE_TIME 2000
+
+// ============================================================================
+// ENUMERAZIONI
+// ============================================================================
+
+enum WiFiState {
+  WIFI_STATE_OFF,
+  WIFI_STATE_STARTING,
+  WIFI_STATE_ACTIVE
+};
 
 // ============================================================================
 // STRUTTURE DATI
@@ -213,6 +245,7 @@ PT100Sensor pt100Sensors[NUM_PT100] = {
 
 DigitalInput pressureSwitch = { PRESSURE_PIN, false, false, 0 };
 DigitalInput twilightSwitch = { TWILIGHT_PIN, false, false, 0 };
+DigitalInput wifiButton = { WIFI_BUTTON_PIN, false, false, 0 };
 
 DigitalOutput outputs[3] = {
   { LED_ALARM_PIN, false },
@@ -225,22 +258,31 @@ SystemConfig sysConfig = {
 };
 
 hw_timer_t* pwmTimer = NULL;
-WebServer server(80);
+WebServer* server = NULL;
 Preferences preferences;
 
 unsigned long lastRpmCalc = 0;
 unsigned long lastPT100Read = 0;
+unsigned long lastPT100Print = 0;
 unsigned long lastTachSample = 0;
 unsigned long lastConnectionCheck = 0;
 bool pt100Initialized = false;
 bool alarmActive = false;
+
+// WiFi Management
+WiFiState wifiState = WIFI_STATE_OFF;
+unsigned long lastClientCheck = 0;
+unsigned long lastClientActivity = 0;
+unsigned long wifiLedLastToggle = 0;
+bool wifiLedState = false;
+bool wifiButtonPressed = false;
 
 // ============================================================================
 // ISR PWM
 // ============================================================================
 
 void IRAM_ATTR onPWMTimer() {
-  register uint8_t i;
+  uint8_t i;
   for (i = 0; i < 3; i++) {
     if (++pwmChannels[i].counter >= PWM_MAX_DUTY) {
       pwmChannels[i].counter = 0;
@@ -331,6 +373,9 @@ void initDigitalInputs() {
   pinMode(PRESSURE_PIN, INPUT_PULLUP);
   pinMode(TWILIGHT_PIN, INPUT_PULLUP);
 
+  // Pin con PULL-DOWN esterno - NO pull-up interno!
+  pinMode(WIFI_BUTTON_PIN, INPUT);  // <-- Senza pull-up
+
   delay(10);
 
   pressureSwitch.state = digitalRead(PRESSURE_PIN);
@@ -338,33 +383,158 @@ void initDigitalInputs() {
 
   twilightSwitch.state = digitalRead(TWILIGHT_PIN);
   twilightSwitch.lastState = twilightSwitch.state;
+
+  wifiButton.state = digitalRead(WIFI_BUTTON_PIN);
+  wifiButton.lastState = wifiButton.state;
+
+  // Debug
+  Serial.print("WiFi Button stato iniziale (dovrebbe essere 0): ");
+  Serial.println(wifiButton.state);
 }
 
 void initDigitalOutputs() {
   pinMode(LED_ALARM_PIN, OUTPUT);
   pinMode(OUTPUT_1_PIN, OUTPUT);
   pinMode(OUTPUT_2_PIN, OUTPUT);
+  pinMode(LED3_PIN, OUTPUT);
 
   digitalWrite(LED_ALARM_PIN, LOW);
   digitalWrite(OUTPUT_1_PIN, LOW);
   digitalWrite(OUTPUT_2_PIN, LOW);
+  digitalWrite(LED3_PIN, LOW);
 }
 
-void initWiFi() {
-  // Configurazione IP statico Access Point
-  IPAddress local_IP(192, 100, 100, 1);
-  IPAddress gateway(192, 100, 100, 1);
-  IPAddress subnet(255, 255, 255, 0);
+// ============================================================================
+// WIFI MANAGEMENT
+// ============================================================================
+
+void enableWiFi() {
+  if (wifiState != WIFI_STATE_OFF) return;
+
+  Serial.println("WiFi: Avvio...");
+  wifiState = WIFI_STATE_STARTING;
 
   WiFi.mode(WIFI_AP);
-  WiFi.softAPConfig(local_IP, gateway, subnet);
+
+  IPAddress local_IP(WIFI_IP_ADDR);
+  IPAddress gateway(WIFI_GATEWAY);
+  IPAddress subnet(WIFI_SUBNET);
+
+  if (!WiFi.softAPConfig(local_IP, gateway, subnet)) {
+    Serial.println("WiFi: ERRORE Config IP");
+  }
+
   WiFi.softAP(WIFI_SSID, WIFI_PASSWORD, WIFI_CHANNEL);
 
   delay(100);
 
+  if (server == NULL) {
+    server = new WebServer(80);
+    initWebServer();
+  }
+
+  wifiState = WIFI_STATE_ACTIVE;
+  lastClientActivity = millis();
+  lastClientCheck = millis();
+
   IPAddress IP = WiFi.softAPIP();
-  Serial.print("AP IP: ");
+  Serial.print("WiFi: ATTIVO - IP: ");
   Serial.println(IP);
+}
+
+void disableWiFi() {
+  if (wifiState == WIFI_STATE_OFF) return;
+
+  Serial.println("WiFi: Spegnimento...");
+
+  if (server != NULL) {
+    server->stop();
+  }
+
+  WiFi.softAPdisconnect(true);
+  WiFi.mode(WIFI_OFF);
+
+  wifiState = WIFI_STATE_OFF;
+  digitalWrite(LED3_PIN, LOW);
+
+  Serial.println("WiFi: SPENTO");
+}
+
+void updateWiFiLED() {
+  unsigned long now = millis();
+
+  if (wifiState == WIFI_STATE_OFF) {
+    digitalWrite(LED3_PIN, LOW);
+  } else if (wifiState == WIFI_STATE_STARTING) {
+    if (now - wifiLedLastToggle >= WIFI_LED_BLINK_TIME) {
+      wifiLedState = !wifiLedState;
+      digitalWrite(LED3_PIN, wifiLedState ? HIGH : LOW);
+      wifiLedLastToggle = now;
+    }
+  } else if (wifiState == WIFI_STATE_ACTIVE) {
+    digitalWrite(LED3_PIN, HIGH);
+  }
+}
+
+void updateWiFiButton() {
+  bool rawState = digitalRead(WIFI_BUTTON_PIN);
+
+  updateDigitalInput(&wifiButton);
+
+  // PULSANTE ATTIVO HIGH (con pull-down esterno)
+  bool currentPressed = (wifiButton.state == HIGH);  // <-- HIGH = premuto
+
+  static unsigned long lastDebugPrint = 0;
+  if (millis() - lastDebugPrint > 1000) {
+    Serial.print("BTN Raw:");
+    Serial.print(rawState);
+    Serial.print(" Debounced:");
+    Serial.print(wifiButton.state);
+    Serial.print(" Pressed:");
+    Serial.print(currentPressed);
+    Serial.print(" WiFi:");
+    Serial.println(wifiState);
+    lastDebugPrint = millis();
+  }
+
+  if (currentPressed && !wifiButtonPressed) {
+    wifiButtonPressed = true;
+    Serial.println("\n*** PULSANTE PREMUTO ***");
+
+    if (wifiState == WIFI_STATE_OFF) {
+      Serial.println("Attivazione WiFi...");
+      enableWiFi();
+    } else if (wifiState == WIFI_STATE_ACTIVE) {
+      lastClientActivity = millis();
+      Serial.println("WiFi: Timeout resettato");
+    }
+  } else if (!currentPressed && wifiButtonPressed) {
+    wifiButtonPressed = false;
+    Serial.println("*** PULSANTE RILASCIATO ***");
+  }
+}
+
+void checkWiFiTimeout() {
+  if (wifiState != WIFI_STATE_ACTIVE) return;
+
+  unsigned long now = millis();
+
+  if (now - lastClientCheck >= CLIENT_CHECK_INTERVAL) {
+    lastClientCheck = now;
+
+    uint8_t clientCount = WiFi.softAPgetStationNum();
+
+    if (clientCount > 0) {
+      lastClientActivity = now;
+    }
+
+    unsigned long timeSinceLastClient = now - lastClientActivity;
+
+    if (timeSinceLastClient >= WIFI_TIMEOUT_MS) {
+      Serial.println("WiFi: Timeout - Nessun client per 5 minuti");
+      disableWiFi();
+    }
+  }
 }
 
 // ============================================================================
@@ -423,14 +593,6 @@ void saveConfiguration() {
   }
 
   preferences.end();
-
-  // Debug
-  Serial.println("=== CONFIG SALVATA ===");
-  Serial.print("Twilight: ");
-  Serial.print(sysConfig.twilightMode);
-  Serial.print(" | Reduction: ");
-  Serial.println(sysConfig.twilightReduction);
-  Serial.println("======================");
 }
 
 // ============================================================================
@@ -447,11 +609,9 @@ float readPT100Temperature(PT100Sensor* sensor) {
 
   float adcValue = adcSum / 10.0;
 
-  // CORREZIONE: Rileva sensore disconnesso
-  // Se ADC è troppo alto o troppo basso → sensore non collegato
   if (adcValue < 100 || adcValue > 4000) {
     sensor->valid = false;
-    return 20.0;  // Valore default
+    return 20.0;
   }
 
   float voltage = (adcValue / ADC_RESOLUTION) * ADC_VREF;
@@ -468,7 +628,6 @@ float readPT100Temperature(PT100Sensor* sensor) {
   if (resistance > 200.0) resistance = 200.0;
 
   float temperature = (resistance - PT100_R0) / (PT100_R0 * PT100_ALPHA);
-  temperature /= 10.0;
 
   sensor->samples[sensor->sampleIndex] = temperature;
   sensor->sampleIndex = (sensor->sampleIndex + 1) % PT100_SAMPLES;
@@ -479,7 +638,6 @@ float readPT100Temperature(PT100Sensor* sensor) {
   }
   float avgTemp = sum / PT100_SAMPLES;
 
-  // CORREZIONE: Range temperatura più stretto per validazione
   sensor->valid = (avgTemp >= 0.0 && avgTemp <= 70.0);
 
   return avgTemp;
@@ -501,6 +659,27 @@ void updatePT100() {
       pt100Sensors[i].temperature = readPT100Temperature(&pt100Sensors[i]);
     }
     lastPT100Read = now;
+  }
+}
+
+void printTemperatures() {
+  unsigned long now = millis();
+
+  if (now - lastPT100Print >= PT100_PRINT_TIME) {
+    Serial.println("\n=== TEMPERATURE ===");
+    for (uint8_t i = 0; i < NUM_PT100; i++) {
+      Serial.print("PT10");
+      Serial.print(pt100Sensors[i].id);
+      Serial.print(": ");
+      if (pt100Sensors[i].valid) {
+        Serial.print(pt100Sensors[i].temperature, 1);
+        Serial.println("°C");
+      } else {
+        Serial.println("ERRORE");
+      }
+    }
+    Serial.println("==================\n");
+    lastPT100Print = now;
   }
 }
 
@@ -544,8 +723,8 @@ void updateAlarm() {
 
   if (alarm != alarmActive) {
     alarmActive = alarm;
-    setDigitalOutput(0, alarm);  // LED rosso
-    setDigitalOutput(1, alarm);  // Output 1
+    setDigitalOutput(0, alarm);
+    setDigitalOutput(1, alarm);
   }
 }
 
@@ -580,7 +759,6 @@ uint8_t calculatePWMFromTemp(uint8_t channelIndex) {
   float minTemp = cfg->minTemp;
   float maxTemp = cfg->maxTemp;
 
-  // Isteresi 1°C
   if (cfg->inHysteresis) {
     if (temp < (minTemp - TEMP_HYSTERESIS)) {
       cfg->inHysteresis = false;
@@ -594,7 +772,6 @@ uint8_t calculatePWMFromTemp(uint8_t channelIndex) {
     }
   }
 
-  // Calcolo rampa lineare
   if (temp >= maxTemp) {
     return PWM_MAX_DUTY;
   }
@@ -614,14 +791,12 @@ void applyTwilightMode(uint8_t* duty) {
   uint8_t originalDuty = *duty;
   uint8_t reduction = (*duty * sysConfig.twilightReduction) / 100;
 
-  // Calcola nuovo duty
   if (*duty > reduction) {
     *duty = *duty - reduction;
   } else {
     *duty = PWM_MIN_DUTY;
   }
 
-  // Assicura che non vada sotto il minimo
   if (*duty < PWM_MIN_DUTY) {
     *duty = PWM_MIN_DUTY;
   }
@@ -630,40 +805,10 @@ void applyTwilightMode(uint8_t* duty) {
 void updateAutomaticControl() {
   if (!pt100Initialized) return;
 
-  static unsigned long lastDebug = 0;
-  bool printDebug = (millis() - lastDebug > 5000);  // Debug ogni 5 secondi
-
-  if (printDebug) {
-    Serial.println("\n=== CONTROLLO AUTOMATICO ===");
-    Serial.print("Twilight Mode: ");
-    Serial.print(sysConfig.twilightMode ? "ON" : "OFF");
-    Serial.print(" | Reduction: ");
-    Serial.print(sysConfig.twilightReduction);
-    Serial.println("%");
-  }
-
   for (uint8_t i = 0; i < 3; i++) {
     uint8_t dutyFromTemp = calculatePWMFromTemp(i);
-    uint8_t dutyBeforeTwilight = dutyFromTemp;
-
     applyTwilightMode(&dutyFromTemp);
-
-    if (printDebug) {
-      Serial.print("PWM");
-      Serial.print(i + 1);
-      Serial.print(": Temp=");
-      Serial.print(dutyBeforeTwilight);
-      Serial.print("% → Twilight=");
-      Serial.print(dutyFromTemp);
-      Serial.println("%");
-    }
-
     setPWM(i, dutyFromTemp);
-  }
-
-  if (printDebug) {
-    Serial.println("===========================\n");
-    lastDebug = millis();
   }
 }
 
@@ -683,10 +828,6 @@ void calculateRPM() {
       fans[i].pulseCount = 0;
 
       fans[i].rpm = (uint16_t)((pulses / PULSES_PER_REV) / minutes);
-
-      // CORREZIONE: Logica semplificata
-      // Se RPM > 100 → CONNESSA (indipendentemente dal PWM)
-      // Se RPM <= 100 → DISCONNESSA
       fans[i].connected = (fans[i].rpm > 100);
     }
 
@@ -699,7 +840,6 @@ void calculateRPM() {
 // ============================================================================
 
 const char HTML_PAGE[] PROGMEM = R"rawliteral(
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -751,7 +891,7 @@ input:checked+.slider:before{transform:translateX(26px)}
 <body>
 <div class="header">
 <h1>🌀 EP401 - Sistema Ventole</h1>
-<div class="version">v3.0.4 | ESP32-S3</div>
+<div class="version">v3.0.2 | ESP32-S3</div>
 <div id="saveIndicator" class="save-indicator">💾 Salvato</div>
 </div>
 <div id="alarm" class="alarm">⚠️ ALLARME PRESSOSTATO ATTIVO</div>
@@ -822,7 +962,7 @@ showSaveIndicator('saving');
 clearTimeout(saveTimeout);
 saveTimeout=setTimeout(()=>{
 autoSaveConfig();
-},1000); // Salva 1 secondo dopo l'ultima modifica
+},1000);
 }
 
 function autoSaveConfig(){
@@ -956,7 +1096,6 @@ updateStatus();
 </script>
 </body>
 </html>
-
 )rawliteral";
 
 // ============================================================================
@@ -964,16 +1103,14 @@ updateStatus();
 // ============================================================================
 
 void handleRoot() {
-  server.send(200, "text/html", HTML_PAGE);
+  server->send(200, "text/html", HTML_PAGE);
 }
 
 void handleStatus() {
   String json = "{";
 
-  // Allarme
   json += "\"alarm\":" + String(alarmActive ? "true" : "false") + ",";
 
-  // Ventole
   json += "\"fans\":[";
   for (uint8_t i = 0; i < NUM_FANS; i++) {
     if (i > 0) json += ",";
@@ -983,7 +1120,6 @@ void handleStatus() {
   }
   json += "],";
 
-  // Temperature
   json += "\"temps\":[";
   for (uint8_t i = 0; i < NUM_PT100; i++) {
     if (i > 0) json += ",";
@@ -993,13 +1129,11 @@ void handleStatus() {
   }
   json += "],";
 
-  // Ingressi
   json += "\"inputs\":{";
   json += "\"pressure\":" + String(pressureSwitch.state ? "true" : "false") + ",";
   json += "\"twilight\":" + String(twilightSwitch.state ? "true" : "false");
   json += "},";
 
-  // Configurazione
   json += "\"config\":{";
   json += "\"twilightMode\":" + String(sysConfig.twilightMode ? "true" : "false") + ",";
   json += "\"twilightReduction\":" + String(sysConfig.twilightReduction) + ",";
@@ -1016,40 +1150,29 @@ void handleStatus() {
 
   json += "}";
 
-  server.send(200, "application/json", json);
+  server->send(200, "application/json", json);
 }
 
 void handleConfig() {
-  if (server.method() != HTTP_POST) {
-    server.send(405, "application/json", "{\"success\":false}");
+  if (server->method() != HTTP_POST) {
+    server->send(405, "application/json", "{\"success\":false}");
     return;
   }
 
-  String body = server.arg("plain");
+  String body = server->arg("plain");
 
-  Serial.println("\n========== CONFIG RICEVUTA ==========");
-  Serial.println(body);
-  Serial.println("=====================================\n");
-
-  // Parsing migliorato - cerca esattamente il pattern JSON
-
-  // twilightMode
   int twilightIdx = body.indexOf("\"twilightMode\"");
   if (twilightIdx >= 0) {
     String after = body.substring(twilightIdx);
-    // Cerca : poi il valore booleano
     int colonIdx = after.indexOf(":");
     if (colonIdx >= 0) {
       String valueSection = after.substring(colonIdx + 1, colonIdx + 10);
       valueSection.trim();
       valueSection.toLowerCase();
       sysConfig.twilightMode = (valueSection.indexOf("true") >= 0);
-      Serial.print("Parsed twilightMode: ");
-      Serial.println(sysConfig.twilightMode ? "true" : "false");
     }
   }
 
-  // twilightReduction
   int reductionIdx = body.indexOf("\"twilightReduction\"");
   if (reductionIdx >= 0) {
     String after = body.substring(reductionIdx);
@@ -1061,12 +1184,9 @@ void handleConfig() {
       String valueStr = after.substring(colonIdx + 1, endIdx);
       valueStr.trim();
       sysConfig.twilightReduction = constrain(valueStr.toInt(), 0, 50);
-      Serial.print("Parsed twilightReduction: ");
-      Serial.println(sysConfig.twilightReduction);
     }
   }
 
-  // pressureEnabled
   int pressureIdx = body.indexOf("\"pressureEnabled\"");
   if (pressureIdx >= 0) {
     String after = body.substring(pressureIdx);
@@ -1076,12 +1196,9 @@ void handleConfig() {
       valueSection.trim();
       valueSection.toLowerCase();
       sysConfig.pressureAlarmEnabled = (valueSection.indexOf("true") >= 0);
-      Serial.print("Parsed pressureEnabled: ");
-      Serial.println(sysConfig.pressureAlarmEnabled ? "true" : "false");
     }
   }
 
-  // Parse PWM array
   int pwmArrayIdx = body.indexOf("\"pwm\"");
   if (pwmArrayIdx >= 0) {
     String pwmSection = body.substring(pwmArrayIdx);
@@ -1091,7 +1208,6 @@ void handleConfig() {
     if (arrayStart >= 0 && arrayEnd > arrayStart) {
       String arrayContent = pwmSection.substring(arrayStart + 1, arrayEnd);
 
-      // Split per oggetti
       int objCount = 0;
       int searchFrom = 0;
 
@@ -1103,7 +1219,6 @@ void handleConfig() {
 
         String obj = arrayContent.substring(objStart, objEnd + 1);
 
-        // Parse sensor
         int sensorIdx = obj.indexOf("\"sensor\"");
         if (sensorIdx >= 0) {
           String after = obj.substring(sensorIdx);
@@ -1114,7 +1229,6 @@ void handleConfig() {
           sysConfig.pwm[objCount].tempSensor = constrain(val.toInt(), 1, 2);
         }
 
-        // Parse minTemp
         int minIdx = obj.indexOf("\"minTemp\"");
         if (minIdx >= 0) {
           String after = obj.substring(minIdx);
@@ -1126,7 +1240,6 @@ void handleConfig() {
           sysConfig.pwm[objCount].minTemp = constrain(val.toFloat(), 0.0, 60.0);
         }
 
-        // Parse maxTemp
         int maxIdx = obj.indexOf("\"maxTemp\"");
         if (maxIdx >= 0) {
           String after = obj.substring(maxIdx);
@@ -1137,15 +1250,6 @@ void handleConfig() {
           sysConfig.pwm[objCount].maxTemp = constrain(val.toFloat(), 0.0, 80.0);
         }
 
-        Serial.print("Parsed PWM");
-        Serial.print(objCount + 1);
-        Serial.print(": sensor=");
-        Serial.print(sysConfig.pwm[objCount].tempSensor);
-        Serial.print(", min=");
-        Serial.print(sysConfig.pwm[objCount].minTemp);
-        Serial.print(", max=");
-        Serial.println(sysConfig.pwm[objCount].maxTemp);
-
         objCount++;
         searchFrom = objEnd + 1;
       }
@@ -1154,25 +1258,15 @@ void handleConfig() {
 
   saveConfiguration();
 
-  Serial.println("\n========== CONFIG APPLICATA =========");
-  Serial.print("twilightMode: ");
-  Serial.println(sysConfig.twilightMode ? "ON" : "OFF");
-  Serial.print("twilightReduction: ");
-  Serial.print(sysConfig.twilightReduction);
-  Serial.println("%");
-  Serial.print("pressureEnabled: ");
-  Serial.println(sysConfig.pressureAlarmEnabled ? "ON" : "OFF");
-  Serial.println("====================================\n");
-
-  server.send(200, "application/json", "{\"success\":true}");
+  server->send(200, "application/json", "{\"success\":true}");
 }
 
 void initWebServer() {
-  server.on("/", handleRoot);
-  server.on("/api/status", handleStatus);
-  server.on("/api/config", handleConfig);
+  server->on("/", handleRoot);
+  server->on("/api/status", handleStatus);
+  server->on("/api/config", handleConfig);
 
-  server.begin();
+  server->begin();
 }
 
 // ============================================================================
@@ -1185,7 +1279,7 @@ void setup() {
 
   Serial.println("\n========================================");
   Serial.println("  EP401v1 - Automazione Ventole");
-  Serial.println("  Versione: 3.0.4");
+  Serial.println("  Versione: 3.0.2");
   Serial.println("========================================");
 
   Serial.print("PWM...");
@@ -1212,17 +1306,8 @@ void setup() {
   loadConfiguration();
   Serial.println("OK");
 
-  Serial.print("WiFi...");
-  initWiFi();
-  Serial.println("OK");
-
-  Serial.print("WebServer...");
-  initWebServer();
-  Serial.println("OK");
-
   Serial.println("\nSistema pronto!");
-  Serial.print("WebUI: http://");
-  Serial.println(WiFi.softAPIP());
+  Serial.println("WiFi: SPENTO (premi pulsante per attivare)");
 
   lastRpmCalc = millis();
 }
@@ -1232,16 +1317,19 @@ void setup() {
 // ============================================================================
 
 void loop() {
-  // CRITICO: Polling tachimetri ad ogni ciclo
   updateTachometers();
-
-  // Aggiornamenti periodici
   calculateRPM();
   updatePT100();
+  printTemperatures();
   updateDigitalInputs();
   updateAlarm();
   updateAutomaticControl();
 
-  // WebServer
-  server.handleClient();
+  updateWiFiButton();
+  updateWiFiLED();
+  checkWiFiTimeout();
+
+  if (wifiState == WIFI_STATE_ACTIVE && server != NULL) {
+    server->handleClient();
+  }
 }
