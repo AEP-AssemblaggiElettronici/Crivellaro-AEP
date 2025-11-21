@@ -4,8 +4,8 @@
  * AUTHOR: E.Pacenti
  * TARGET: ESP32-S3
  * 
- * VERSION: 3.0.2
- * DATE: 2025-11-05
+ * VERSION: 3.2.0
+ * DATE: 2025-11-21
  * 
  * DESCRIPTION:
  * Sistema di controllo per 6 ventole EBM-Papst R3G133-RA01-20 con WebServer
@@ -19,42 +19,53 @@
  * - WebServer WiFi Access Point per controllo remoto
  * - Controllo automatico temperatura con isteresi
  * - Modalità crepuscolare con riduzione velocità
+ * - Calibrazione PT100 via comandi seriali
  * 
  * HARDWARE:
  * - MCU: ESP32-S3-WROOM
  * - Ventole: EBM-Papst R3G133-RA01-20 (EC, 230VAC)
  * - PWM: Software, 500Hz, risoluzione 100 step (INVERTITO), minimo 30%
- * - PT100: ADC interno, partitore con R_REF=172Ω, range 0-60°C
+ * - PT100: ADC interno, partitore con R_REF calibrabile, range 0-60°C
  * - WiFi: Access Point on-demand "EP401-FAN_CTRL" - IP: 192.100.100.1
  * - WiFi Button: Pin 7 (attivazione/mantenimento)
  * - WiFi LED: Pin 6 (indicatore stato)
  * 
+ * COMANDI SERIALI:
+ * - CAL GET           : Mostra R_REF corrente
+ * - CAL SET <valore>  : Imposta R_REF (es: CAL SET 172.5)
+ * - CAL RESET         : Ripristina R_REF default (163.0)
+ * - CAL INFO          : Mostra temperatura corrente e info calibrazione
+ * - HELP              : Lista comandi disponibili
+ * 
  * CHANGELOG:
+ * v3.2.0 (2025-11-21) - Calibrazione PT100 via comandi seriali
+ *   + Aggiunta calibrazione R_REF tramite comandi seriali
+ *   + Comandi: CAL GET, CAL SET, CAL RESET, CAL INFO, HELP
+ *   + Parser comandi seriali non bloccante
+ *   - REMOVED: Sezione calibrazione da WebServer (su richiesta)
+ *   * CHANGED: Interfaccia web più pulita e focalizzata
+ *   * FIXED: Calibrazione R_REF ora solo via USB per sicurezza
+ * v3.1.0 (2025-11-21) - Calibrazione PT100 via WebServer
+ *   + Aggiunta calibrazione R_REF via interfaccia web
+ *   + Metodo manuale e automatico per calibrazione
+ *   + R_REF salvato in NVS (persistente per ogni scheda)
+ * v3.0.3 (2025-11-21) - Fix riconnessione WiFi dopo timeout
+ *   * FIXED: WebServer completamente distrutto e ricreato ad ogni ciclo
+ *   * FIXED: Risolto problema mancata connessione dopo timeout
  * v3.0.2 (2025-11-05) - WiFi On-Demand con timeout automatico
  *   + Aggiunto pulsante WiFi su pin 7 per attivazione on-demand
  *   + Aggiunto LED3 su pin 6 come indicatore stato WiFi
- *   + WiFi si disabilita automaticamente dopo 5 minuti senza client connessi
- *   + Stati LED: OFF=WiFi spento, LAMPEGGIO=avvio, FISSO=attivo
- *   * CHANGED: WiFi non parte automaticamente all'avvio
- *   * CHANGED: Pressione pulsante durante WiFi attivo resetta timeout
+ *   + WiFi si disabilita automaticamente dopo 5 minuti senza client
  * v3.0.1 (2025-11-03) - Calibrazione PT100 e miglioramenti rete
- *   * FIXED: R_REF corretto a 172.0Ω (era 1000.0Ω) per lettura accurata PT100
+ *   * FIXED: R_REF corretto per lettura accurata PT100
  *   + Aggiunta stampa periodica temperature su seriale
- *   * CHANGED: IP Access Point fisso a 192.100.100.1
- *   * CHANGED: SSID Access Point: "EP401-FAN_CTRL"
  * v3.0.0 (2025-10-31) - WebServer e Controllo Automatico
  *   + Aggiunto WiFi Access Point e WebServer
  *   + Interfaccia web responsive per monitoraggio e controllo
- *   + Controllo automatico temperatura con isteresi 1°C
- *   + Modalità crepuscolare con riduzione configurabile (0-50%)
- *   + Sistema allarme pressostato con LED e output digitale
- *   + Salvataggio configurazioni in NVS (Preferences)
- *   + 3 output digitali (LED allarme + 2 liberi)
- *   + API REST JSON per integrazione
+ *   + Controllo automatico temperatura con isteresi
  * v2.0.0 (2025-10-30) - VERSIONE STABILE - Tachimetri con polling
  *   - Rimossi interrupt tachimetri (causa stack overflow)
  *   - Implementato polling a 10kHz per lettura tachimetri
- *   - Sistema 100% stabile senza crash
  * v1.7.0 (2025-10-30) - Tentativo debounce ISR
  * v1.6.1 (2025-10-30) - Tentativo stack aumentato
  * v1.6.0 (2025-10-30) - PWM 500Hz
@@ -123,7 +134,7 @@
 #define PT100_PRINT_TIME 10000
 #define ADC_RESOLUTION 4095.0
 #define ADC_VREF 3.3
-#define R_REF 172.0
+#define R_REF_DEFAULT 163.0
 #define PT100_R0 100.0
 #define PT100_ALPHA 0.00385
 
@@ -150,6 +161,9 @@
 
 // WebServer
 #define WEB_UPDATE_TIME 2000
+
+// Serial Commands
+#define SERIAL_BUFFER_SIZE 64
 
 // ============================================================================
 // ENUMERAZIONI
@@ -217,6 +231,7 @@ struct SystemConfig {
   uint8_t twilightReduction;
   bool pressureAlarmEnabled;
   AutoControlConfig pwm[3];
+  float rRef;
 };
 
 // ============================================================================
@@ -254,7 +269,7 @@ DigitalOutput outputs[3] = {
 };
 
 SystemConfig sysConfig = {
-  false, 20, true, { { true, 1, TEMP_MIN_DEFAULT, TEMP_MAX_DEFAULT, false }, { true, 1, TEMP_MIN_DEFAULT, TEMP_MAX_DEFAULT, false }, { true, 2, TEMP_MIN_DEFAULT, TEMP_MAX_DEFAULT, false } }
+  false, 20, true, { { true, 1, TEMP_MIN_DEFAULT, TEMP_MAX_DEFAULT, false }, { true, 1, TEMP_MIN_DEFAULT, TEMP_MAX_DEFAULT, false }, { true, 2, TEMP_MIN_DEFAULT, TEMP_MAX_DEFAULT, false } }, R_REF_DEFAULT
 };
 
 hw_timer_t* pwmTimer = NULL;
@@ -276,6 +291,10 @@ unsigned long lastClientActivity = 0;
 unsigned long wifiLedLastToggle = 0;
 bool wifiLedState = false;
 bool wifiButtonPressed = false;
+
+// Serial Command Buffer
+char serialBuffer[SERIAL_BUFFER_SIZE];
+uint8_t serialBufferIndex = 0;
 
 // ============================================================================
 // ISR PWM
@@ -372,9 +391,7 @@ void initPT100() {
 void initDigitalInputs() {
   pinMode(PRESSURE_PIN, INPUT_PULLUP);
   pinMode(TWILIGHT_PIN, INPUT_PULLUP);
-
-  // Pin con PULL-DOWN esterno - NO pull-up interno!
-  pinMode(WIFI_BUTTON_PIN, INPUT);  // <-- Senza pull-up
+  pinMode(WIFI_BUTTON_PIN, INPUT);
 
   delay(10);
 
@@ -386,10 +403,6 @@ void initDigitalInputs() {
 
   wifiButton.state = digitalRead(WIFI_BUTTON_PIN);
   wifiButton.lastState = wifiButton.state;
-
-  // Debug
-  Serial.print("WiFi Button stato iniziale (dovrebbe essere 0): ");
-  Serial.println(wifiButton.state);
 }
 
 void initDigitalOutputs() {
@@ -425,13 +438,16 @@ void enableWiFi() {
   }
 
   WiFi.softAP(WIFI_SSID, WIFI_PASSWORD, WIFI_CHANNEL);
-
   delay(100);
 
-  if (server == NULL) {
-    server = new WebServer(80);
-    initWebServer();
+  if (server != NULL) {
+    delete server;
+    server = NULL;
   }
+
+  server = new WebServer(80);
+  initWebServer();
+  server->begin();
 
   wifiState = WIFI_STATE_ACTIVE;
   lastClientActivity = millis();
@@ -449,10 +465,15 @@ void disableWiFi() {
 
   if (server != NULL) {
     server->stop();
+    server->close();
+    delete server;
+    server = NULL;
   }
 
   WiFi.softAPdisconnect(true);
   WiFi.mode(WIFI_OFF);
+
+  delay(100);
 
   wifiState = WIFI_STATE_OFF;
   digitalWrite(LED3_PIN, LOW);
@@ -477,40 +498,20 @@ void updateWiFiLED() {
 }
 
 void updateWiFiButton() {
-  bool rawState = digitalRead(WIFI_BUTTON_PIN);
-
   updateDigitalInput(&wifiButton);
 
-  // PULSANTE ATTIVO HIGH (con pull-down esterno)
-  bool currentPressed = (wifiButton.state == HIGH);  // <-- HIGH = premuto
-
-  static unsigned long lastDebugPrint = 0;
-  if (millis() - lastDebugPrint > 1000) {
-    Serial.print("BTN Raw:");
-    Serial.print(rawState);
-    Serial.print(" Debounced:");
-    Serial.print(wifiButton.state);
-    Serial.print(" Pressed:");
-    Serial.print(currentPressed);
-    Serial.print(" WiFi:");
-    Serial.println(wifiState);
-    lastDebugPrint = millis();
-  }
+  bool currentPressed = (wifiButton.state == HIGH);
 
   if (currentPressed && !wifiButtonPressed) {
     wifiButtonPressed = true;
-    Serial.println("\n*** PULSANTE PREMUTO ***");
 
     if (wifiState == WIFI_STATE_OFF) {
-      Serial.println("Attivazione WiFi...");
       enableWiFi();
     } else if (wifiState == WIFI_STATE_ACTIVE) {
       lastClientActivity = millis();
-      Serial.println("WiFi: Timeout resettato");
     }
   } else if (!currentPressed && wifiButtonPressed) {
     wifiButtonPressed = false;
-    Serial.println("*** PULSANTE RILASCIATO ***");
   }
 }
 
@@ -547,6 +548,7 @@ void loadConfiguration() {
   sysConfig.twilightMode = preferences.getBool("twilight", false);
   sysConfig.twilightReduction = preferences.getUChar("twilRed", 20);
   sysConfig.pressureAlarmEnabled = preferences.getBool("pressEn", true);
+  sysConfig.rRef = preferences.getFloat("rRef", R_REF_DEFAULT);
 
   for (uint8_t i = 0; i < 3; i++) {
     char key[16];
@@ -575,6 +577,7 @@ void saveConfiguration() {
   preferences.putBool("twilight", sysConfig.twilightMode);
   preferences.putUChar("twilRed", sysConfig.twilightReduction);
   preferences.putBool("pressEn", sysConfig.pressureAlarmEnabled);
+  preferences.putFloat("rRef", sysConfig.rRef);
 
   for (uint8_t i = 0; i < 3; i++) {
     char key[16];
@@ -622,7 +625,7 @@ float readPT100Temperature(PT100Sensor* sensor) {
   float denominator = ADC_VREF - voltage;
   if (denominator < 0.01) denominator = 0.01;
 
-  float resistance = (voltage * R_REF) / denominator;
+  float resistance = (voltage * sysConfig.rRef) / denominator;
 
   if (resistance < 50.0) resistance = 50.0;
   if (resistance > 200.0) resistance = 200.0;
@@ -680,6 +683,175 @@ void printTemperatures() {
     }
     Serial.println("==================\n");
     lastPT100Print = now;
+  }
+}
+
+// ============================================================================
+// COMANDI SERIALI
+// ============================================================================
+
+void printHelp() {
+  Serial.println("\n========================================");
+  Serial.println("  EP401v1 - COMANDI DISPONIBILI");
+  Serial.println("========================================");
+  Serial.println("CAL GET          - Mostra R_REF corrente");
+  Serial.println("CAL SET <valore> - Imposta R_REF (es: CAL SET 172.5)");
+  Serial.println("CAL RESET        - Ripristina R_REF default (163.0)");
+  Serial.println("CAL INFO         - Mostra info calibrazione e temperature");
+  Serial.println("HELP             - Mostra questo messaggio");
+  Serial.println("========================================\n");
+}
+
+void handleCalGet() {
+  Serial.println("\n--- CALIBRAZIONE R_REF ---");
+  Serial.print("R_REF corrente: ");
+  Serial.print(sysConfig.rRef, 1);
+  Serial.println(" Ω");
+  Serial.println("--------------------------\n");
+}
+
+void handleCalSet(float value) {
+  if (value < 50.0 || value > 500.0) {
+    Serial.println("\nERRORE: R_REF deve essere tra 50.0 e 500.0 Ω\n");
+    return;
+  }
+
+  sysConfig.rRef = value;
+  saveConfiguration();
+
+  Serial.println("\n--- CALIBRAZIONE SALVATA ---");
+  Serial.print("Nuovo R_REF: ");
+  Serial.print(sysConfig.rRef, 1);
+  Serial.println(" Ω");
+  Serial.println("Valore salvato in memoria permanente");
+  Serial.println("----------------------------\n");
+}
+
+void handleCalReset() {
+  sysConfig.rRef = R_REF_DEFAULT;
+  saveConfiguration();
+
+  Serial.println("\n--- CALIBRAZIONE RESETTATA ---");
+  Serial.print("R_REF ripristinato a default: ");
+  Serial.print(sysConfig.rRef, 1);
+  Serial.println(" Ω");
+  Serial.println("------------------------------\n");
+}
+
+void handleCalInfo() {
+  Serial.println("\n========================================");
+  Serial.println("  INFORMAZIONI CALIBRAZIONE PT100");
+  Serial.println("========================================");
+
+  Serial.print("R_REF corrente: ");
+  Serial.print(sysConfig.rRef, 1);
+  Serial.println(" Ω");
+
+  Serial.print("R_REF default:  ");
+  Serial.print(R_REF_DEFAULT, 1);
+  Serial.println(" Ω");
+
+  Serial.println("\nTemperature correnti:");
+  for (uint8_t i = 0; i < NUM_PT100; i++) {
+    Serial.print("  PT10");
+    Serial.print(pt100Sensors[i].id);
+    Serial.print(": ");
+    if (pt100Sensors[i].valid) {
+      Serial.print(pt100Sensors[i].temperature, 1);
+      Serial.println("°C");
+    } else {
+      Serial.println("ERRORE");
+    }
+  }
+
+  Serial.println("\nProcedura calibrazione:");
+  Serial.println("1. Misura temperatura ambiente con termometro");
+  Serial.println("2. Confronta con lettura PT100");
+  Serial.println("3. Regola R_REF con: CAL SET <valore>");
+  Serial.println("4. Ripeti fino a lettura corretta");
+  Serial.println("========================================\n");
+}
+
+void processSerialCommand(char* cmd) {
+  // Rimuovi spazi iniziali
+  while (*cmd == ' ') cmd++;
+
+  // Comando vuoto
+  if (*cmd == '\0') return;
+
+  // Converti in maiuscolo per confronto
+  char upperCmd[SERIAL_BUFFER_SIZE];
+  uint8_t i = 0;
+  while (cmd[i] != '\0' && i < SERIAL_BUFFER_SIZE - 1) {
+    upperCmd[i] = toupper(cmd[i]);
+    i++;
+  }
+  upperCmd[i] = '\0';
+
+  // HELP
+  if (strcmp(upperCmd, "HELP") == 0) {
+    printHelp();
+    return;
+  }
+
+  // CAL GET
+  if (strcmp(upperCmd, "CAL GET") == 0) {
+    handleCalGet();
+    return;
+  }
+
+  // CAL RESET
+  if (strcmp(upperCmd, "CAL RESET") == 0) {
+    handleCalReset();
+    return;
+  }
+
+  // CAL INFO
+  if (strcmp(upperCmd, "CAL INFO") == 0) {
+    handleCalInfo();
+    return;
+  }
+
+  // CAL SET <valore>
+  if (strncmp(upperCmd, "CAL SET ", 8) == 0) {
+    char* valueStr = upperCmd + 8;
+    // Rimuovi spazi
+    while (*valueStr == ' ') valueStr++;
+
+    if (*valueStr == '\0') {
+      Serial.println("\nERRORE: Specificare valore R_REF (es: CAL SET 172.5)\n");
+      return;
+    }
+
+    float value = atof(valueStr);
+    handleCalSet(value);
+    return;
+  }
+
+  // Comando non riconosciuto
+  Serial.print("\nComando non riconosciuto: ");
+  Serial.println(cmd);
+  Serial.println("Digita HELP per lista comandi\n");
+}
+
+void updateSerialCommands() {
+  while (Serial.available() > 0) {
+    char c = Serial.read();
+
+    // Fine comando (newline o carriage return)
+    if (c == '\n' || c == '\r') {
+      if (serialBufferIndex > 0) {
+        serialBuffer[serialBufferIndex] = '\0';
+        processSerialCommand(serialBuffer);
+        serialBufferIndex = 0;
+      }
+    }
+    // Carattere stampabile
+    else if (c >= 32 && c <= 126) {
+      if (serialBufferIndex < SERIAL_BUFFER_SIZE - 1) {
+        serialBuffer[serialBufferIndex++] = c;
+      }
+    }
   }
 }
 
@@ -885,33 +1057,32 @@ input:checked+.slider:before{transform:translateX(26px)}
 .slider-container{margin:10px 0}
 .slider-container input[type=range]{width:100%;height:6px;border-radius:3px;background:#0f3460;outline:none}
 .slider-value{text-align:center;font-size:18px;color:#4a9eff;margin-top:5px}
-.auto-save-info{text-align:center;font-size:12px;color:#aaa;margin-top:15px;padding:10px;background:#0f3460;border-radius:6px}
 </style>
 </head>
 <body>
 <div class="header">
-<h1>🌀 EP401 - Sistema Ventole</h1>
-<div class="version">v3.0.2 | ESP32-S3</div>
-<div id="saveIndicator" class="save-indicator">💾 Salvato</div>
+<h1>EP401 - Sistema Ventole</h1>
+<div class="version">v3.2.0 | ESP32-S3</div>
+<div id="saveIndicator" class="save-indicator">Salvato</div>
 </div>
-<div id="alarm" class="alarm">⚠️ ALLARME PRESSOSTATO ATTIVO</div>
+<div id="alarm" class="alarm">ALLARME PRESSOSTATO ATTIVO</div>
 <div class="container">
 <div class="card">
-<h2>🌀 Ventole</h2>
+<h2>Ventole</h2>
 <div class="fan-grid" id="fanGrid"></div>
 </div>
 <div class="card">
-<h2>🌡️ Temperature</h2>
+<h2>Temperature</h2>
 <div id="tempGrid"></div>
 </div>
 <div class="card">
-<h2>📡 Ingressi Digitali</h2>
+<h2>Ingressi Digitali</h2>
 <div id="inputsGrid"></div>
 </div>
 <div class="card">
-<h2>⚙️ Configurazione</h2>
+<h2>Configurazione</h2>
 <div class="form-group">
-<label>🌙 Modalità Crepuscolare</label>
+<label>Modalità Crepuscolare</label>
 <label class="toggle">
 <input type="checkbox" id="twilightMode" onchange="scheduleAutoSave()">
 <span class="slider"></span>
@@ -924,7 +1095,7 @@ oninput="document.getElementById('twilightValue').innerText=this.value;scheduleA
 </div>
 <div class="config-section">
 <div class="form-group">
-<label>🚨 Lettura Pressostato</label>
+<label>Lettura Pressostato</label>
 <label class="toggle">
 <input type="checkbox" id="pressureEnabled" checked onchange="scheduleAutoSave()">
 <span class="slider"></span>
@@ -934,9 +1105,6 @@ oninput="document.getElementById('twilightValue').innerText=this.value;scheduleA
 <div class="config-section">
 <h3 style="margin-bottom:10px;color:#4a9eff">PWM / Temperatura</h3>
 <div id="pwmConfigs"></div>
-</div>
-<div class="auto-save-info">
-✨ Le modifiche vengono salvate automaticamente
 </div>
 </div>
 </div>
@@ -1265,8 +1433,6 @@ void initWebServer() {
   server->on("/", handleRoot);
   server->on("/api/status", handleStatus);
   server->on("/api/config", handleConfig);
-
-  server->begin();
 }
 
 // ============================================================================
@@ -1279,7 +1445,9 @@ void setup() {
 
   Serial.println("\n========================================");
   Serial.println("  EP401v1 - Automazione Ventole");
-  Serial.println("  Versione: 3.0.2");
+  Serial.println("  Versione: 3.2.0");
+  Serial.println("========================================");
+  Serial.println("Digita HELP per lista comandi");
   Serial.println("========================================");
 
   Serial.print("PWM...");
@@ -1306,8 +1474,13 @@ void setup() {
   loadConfiguration();
   Serial.println("OK");
 
+  Serial.print("R_REF: ");
+  Serial.print(sysConfig.rRef, 1);
+  Serial.println(" Ω");
+
   Serial.println("\nSistema pronto!");
   Serial.println("WiFi: SPENTO (premi pulsante per attivare)");
+  Serial.println("========================================\n");
 
   lastRpmCalc = millis();
 }
@@ -1324,6 +1497,7 @@ void loop() {
   updateDigitalInputs();
   updateAlarm();
   updateAutomaticControl();
+  updateSerialCommands();
 
   updateWiFiButton();
   updateWiFiLED();
